@@ -9,7 +9,9 @@ use url::Url;
 
 mod ipfs_rpc;
 
-pub use ipfs_rpc::{Cid, IpfsRpc, IpfsRpcError, IpldCodec, MhCode};
+use ipfs_rpc::{IpfsRpc, IpfsRpcError};
+
+use crate::types::{Cid, IpldCodec, MhCode};
 
 use crate::traits::Blockable;
 use crate::types::{Manifest, Object};
@@ -36,15 +38,10 @@ impl Backend {
         })
     }
 
-    async fn get_object(&self, cid: &Cid) -> Result<Object, BackendError> {
-        let data = self.ipfs_rpc.get_block(cid).await?;
-        let block = Block::<DefaultParams>::new(cid.clone(), data).unwrap();
-        let ipld = block.decode::<DagCborCodec, Ipld>().unwrap();
-        let object = Object::from_ipld(&ipld).unwrap();
-        Ok(object)
-    }
-
-    async fn put_object(&self, object: &Object) -> Result<Cid, BackendError> {
+    async fn put<B>(&self, object: &B) -> Result<Cid, BackendError>
+    where
+        B: Blockable,
+    {
         let ipld = object.to_ipld();
         let block =
             Block::<DefaultParams>::encode(DagCborCodec, MhCode::Blake3_256, &ipld).unwrap();
@@ -53,8 +50,18 @@ impl Backend {
             .ipfs_rpc
             .put_block(IpldCodec::DagCbor, MhCode::Blake3_256, cursor)
             .await?;
-
         Ok(cid)
+    }
+
+    async fn get<B>(&self, cid: &Cid) -> Result<B, BackendError>
+    where
+        B: Blockable,
+    {
+        let data = self.ipfs_rpc.get_block(cid).await?;
+        let block = Block::<DefaultParams>::new(cid.clone(), data).unwrap();
+        let ipld = block.decode::<DagCborCodec, Ipld>().unwrap();
+        let object = B::from_ipld(&ipld).map_err(|_| BackendError::Blockable)?;
+        Ok(object)
     }
 }
 
@@ -64,6 +71,8 @@ pub enum BackendError {
     IpfsRpc(#[from] IpfsRpcError),
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
+    #[error("blockable error")]
+    Blockable,
 }
 
 #[cfg(test)]
@@ -74,8 +83,17 @@ mod test {
     async fn roundtrip_object() {
         let backend = Backend::default();
         let object = Object::default();
-        let cid = backend.put_object(&object).await.unwrap();
-        let object2 = backend.get_object(&cid).await.unwrap();
+        let cid = backend.put::<Object>(&object).await.unwrap();
+        let object2 = backend.get::<Object>(&cid).await.unwrap();
         assert_eq!(object, object2);
+    }
+
+    #[tokio::test]
+    async fn roundtrip_manifest() {
+        let backend = Backend::default();
+        let manifest = Manifest::new();
+        let cid = backend.put::<Manifest>(&manifest).await.unwrap();
+        let manifest2 = backend.get::<Manifest>(&cid).await.unwrap();
+        assert_eq!(manifest, manifest2);
     }
 }

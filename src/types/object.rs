@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::OffsetDateTime;
 
-use crate::backend::Cid;
+use super::Cid;
+
 use crate::traits::Blockable;
 
 #[derive(Debug, PartialEq)]

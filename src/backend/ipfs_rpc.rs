@@ -11,16 +11,12 @@ use ipfs_api_backend_hyper::IpfsApi;
 use ipfs_api_backend_hyper::{IpfsClient, TryFromUri};
 use url::Url;
 
+use crate::types::{Cid, IpldCodec, MhCode};
+
 /* Constants */
 
 const DEFAULT_CID_VERSION: u32 = 1;
 const DEFAULT_MH_TYPE: &str = "blake3";
-
-/* Re-exports */
-
-pub use libipld::cid::multihash::Code as MhCode;
-pub use libipld::Cid;
-pub use libipld::IpldCodec;
 
 /* Ipfs Rpc Client Wrapper */
 
