@@ -1,32 +1,50 @@
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use libipld::block::Block;
 use libipld::cbor::DagCborCodec;
 use libipld::ipld::Ipld;
 use libipld::store::DefaultParams;
+use url::Url;
 
 mod ipfs_rpc;
 
 pub use ipfs_rpc::{Cid, IpfsRpc, IpfsRpcError, IpldCodec, MhCode};
 
 use crate::traits::Blockable;
-use crate::types::Object;
+use crate::types::{Manifest, Object};
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Backend {
     ipfs_rpc: IpfsRpc,
+    manifest: Arc<Mutex<Manifest>>,
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        let ipfs_rpc_url = Url::parse("http://localhost:5001").unwrap();
+        Self::new(ipfs_rpc_url).unwrap()
+    }
 }
 
 impl Backend {
-    pub fn new(ipfs_rpc: IpfsRpc) -> Self {
-        Self { ipfs_rpc }
+    pub fn new(ipfs_rpc_url: Url) -> Result<Self, BackendError> {
+        let ipfs_rpc = IpfsRpc::try_from(ipfs_rpc_url)?;
+        Ok(Self {
+            ipfs_rpc,
+            manifest: Arc::new(Mutex::new(Manifest::new())),
+        })
     }
-    pub async fn get_object(&self, cid: &Cid) -> Result<Object, BackendError> {
+
+    async fn get_object(&self, cid: &Cid) -> Result<Object, BackendError> {
         let data = self.ipfs_rpc.get_block(cid).await?;
         let block = Block::<DefaultParams>::new(cid.clone(), data).unwrap();
         let ipld = block.decode::<DagCborCodec, Ipld>().unwrap();
         let object = Object::from_ipld(&ipld).unwrap();
         Ok(object)
     }
-    pub async fn put_object(&self, object: &Object) -> Result<Cid, BackendError> {
+
+    async fn put_object(&self, object: &Object) -> Result<Cid, BackendError> {
         let ipld = object.to_ipld();
         let block =
             Block::<DefaultParams>::encode(DagCborCodec, MhCode::Blake3_256, &ipld).unwrap();

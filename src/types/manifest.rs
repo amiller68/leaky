@@ -7,7 +7,16 @@ use super::version::Version;
 use crate::backend::Cid;
 
 // Manifest
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Manifest {
     version: Version,
     previosus: Cid,
+}
+
+impl Manifest {
+    pub fn new() -> Self {
+        let version = Version::new();
+        let previosus = Cid::default();
+        Self { version, previosus }
+    }
 }

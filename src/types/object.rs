@@ -8,12 +8,12 @@ use time::OffsetDateTime;
 use crate::backend::Cid;
 use crate::traits::Blockable;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct Object {
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
     data: Cid,
-    metadata: Value,
+    metadata: BTreeMap<String, Ipld>,
 }
 
 impl Default for Object {
@@ -22,7 +22,7 @@ impl Default for Object {
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
             data: Cid::default(),
-            metadata: Value::Null,
+            metadata: BTreeMap::new(),
         }
     }
 }
@@ -50,10 +50,9 @@ impl Blockable for Object {
             OBJECT_DATA_LABEL.to_string(),
             Ipld::Link(self.data().clone()),
         );
-        let metadata_string = self.metadata().to_string();
         map.insert(
             OBJECT_METADATA_LABEL.to_string(),
-            Ipld::String(metadata_string),
+            Ipld::Map(self.metadata().clone()),
         );
         Ipld::Map(map)
     }
@@ -93,15 +92,14 @@ impl Blockable for Object {
             }
         };
 
-        let metadata_string = match map.get(OBJECT_METADATA_LABEL) {
-            Some(Ipld::String(metadata_string)) => metadata_string,
+        let metadata = match map.get(OBJECT_METADATA_LABEL) {
+            Some(Ipld::Map(metadata)) => metadata.clone(),
             _ => {
                 return Err(ObjectIpldError::MissingMapMember(
                     OBJECT_METADATA_LABEL.to_string(),
                 ))
             }
         };
-        let metadata: Value = serde_json::from_str(&metadata_string)?;
 
         Ok(Self {
             created_at,
@@ -127,21 +125,23 @@ impl Object {
         &self.data
     }
 
-    pub fn metadata(&self) -> &Value {
+    pub fn metadata(&self) -> &BTreeMap<String, Ipld> {
         &self.metadata
     }
 
     /* Updaters */
 
     /// Update the data, metadata or both
-    pub fn update(&mut self, data: Option<Cid>, metadata: Option<Value>) {
+    pub fn update(&mut self, data: Option<Cid>, metadata: Option<BTreeMap<String, Ipld>>) {
         self.updated_at = OffsetDateTime::now_utc();
         match data {
             Some(cid) => self.data = cid,
             None => {}
         }
         match metadata {
-            Some(value) => self.metadata = value,
+            Some(metadata) => {
+                self.metadata = metadata;
+            }
             None => {}
         }
     }
