@@ -1,15 +1,12 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 
 use libipld::Ipld;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use time::OffsetDateTime;
 
 use super::Cid;
 
-use crate::traits::Blockable;
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Object {
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
@@ -22,6 +19,7 @@ impl Default for Object {
         Object {
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
+            // TODO: i might not need the cid here, but we'll see
             data: Cid::default(),
             metadata: BTreeMap::new(),
         }
@@ -33,10 +31,8 @@ const OBJECT_UPDATED_AT_LABEL: &str = "updated_at";
 const OBJECT_DATA_LABEL: &str = "data";
 const OBJECT_METADATA_LABEL: &str = "metadata";
 
-impl Blockable for Object {
-    type Error = ObjectIpldError;
-
-    fn to_ipld(&self) -> Ipld {
+impl Into<Ipld> for Object {
+    fn into(self) -> Ipld {
         let mut map = BTreeMap::new();
 
         map.insert(
@@ -57,8 +53,11 @@ impl Blockable for Object {
         );
         Ipld::Map(map)
     }
+}
 
-    fn from_ipld(ipld: &Ipld) -> Result<Self, Self::Error> {
+impl TryFrom<Ipld> for Object {
+    type Error = ObjectIpldError;
+    fn try_from(ipld: Ipld) -> Result<Self, ObjectIpldError> {
         let map = match ipld {
             Ipld::Map(map) => map,
             _ => return Err(ObjectIpldError::NotMap),

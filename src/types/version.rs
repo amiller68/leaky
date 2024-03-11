@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
+use std::convert::TryFrom;
 use std::env;
 
 use serde::{Deserialize, Serialize};
 
 use super::Ipld;
-
-use crate::traits::Blockable;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Version {
@@ -21,9 +20,8 @@ impl Default for Version {
     }
 }
 
-impl Blockable for Version {
-    type Error = VersionError;
-    fn to_ipld(&self) -> Ipld {
+impl Into<Ipld> for Version {
+    fn into(self) -> Ipld {
         let mut map = BTreeMap::new();
         map.insert(
             "build_profile".to_string(),
@@ -43,7 +41,11 @@ impl Blockable for Version {
         );
         Ipld::Map(map)
     }
-    fn from_ipld(ipld: &libipld::Ipld) -> Result<Self, Self::Error> {
+}
+
+impl TryFrom<Ipld> for Version {
+    type Error = VersionError;
+    fn try_from(ipld: Ipld) -> Result<Self, VersionError> {
         match ipld {
             Ipld::Map(map) => {
                 let version = match map.get("version") {

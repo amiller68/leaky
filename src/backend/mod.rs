@@ -13,8 +13,7 @@ use ipfs_rpc::{IpfsRpc, IpfsRpcError};
 
 use crate::types::{Cid, IpldCodec, MhCode};
 
-use crate::traits::Blockable;
-use crate::types::{Manifest, Object};
+use crate::types::Manifest;
 
 #[derive(Clone)]
 pub struct Backend {
@@ -40,9 +39,9 @@ impl Backend {
 
     async fn put<B>(&self, object: &B) -> Result<Cid, BackendError>
     where
-        B: Blockable,
+        B: Into<Ipld> + Clone,
     {
-        let ipld = object.to_ipld();
+        let ipld: Ipld = object.clone().into();
         let block =
             Block::<DefaultParams>::encode(DagCborCodec, MhCode::Blake3_256, &ipld).unwrap();
         let cursor = std::io::Cursor::new(block.data().to_vec());
@@ -55,12 +54,12 @@ impl Backend {
 
     async fn get<B>(&self, cid: &Cid) -> Result<B, BackendError>
     where
-        B: Blockable,
+        B: TryFrom<Ipld>,
     {
         let data = self.ipfs_rpc.get_block(cid).await?;
         let block = Block::<DefaultParams>::new(cid.clone(), data).unwrap();
         let ipld = block.decode::<DagCborCodec, Ipld>().unwrap();
-        let object = B::from_ipld(&ipld).map_err(|_| BackendError::Blockable)?;
+        let object = B::try_from(ipld).map_err(|_| BackendError::Ipld)?;
         Ok(object)
     }
 }
@@ -71,13 +70,15 @@ pub enum BackendError {
     IpfsRpc(#[from] IpfsRpcError),
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
-    #[error("blockable error")]
-    Blockable,
+    #[error("could not convert Ipld to type")]
+    Ipld,
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use crate::types::Object;
 
     #[tokio::test]
     async fn roundtrip_object() {

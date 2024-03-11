@@ -1,9 +1,9 @@
+use std::convert::TryFrom;
+
 use serde::{Deserialize, Serialize};
 
 use super::version::Version;
 use super::{Cid, Ipld};
-
-use crate::traits::Blockable;
 
 // Manifest
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -12,19 +12,21 @@ pub struct Manifest {
     previosus: Cid,
 }
 
-impl Blockable for Manifest {
-    type Error = ManifestError;
-    fn to_ipld(&self) -> libipld::Ipld {
+impl Into<Ipld> for Manifest {
+    fn into(self) -> Ipld {
         let mut map = std::collections::BTreeMap::new();
-        map.insert("version".to_string(), self.version.to_ipld());
+        map.insert("version".to_string(), self.version.clone().into());
         map.insert("previosus".to_string(), Ipld::Link(self.previous().clone()));
         Ipld::Map(map)
     }
-    fn from_ipld(ipld: &libipld::Ipld) -> Result<Self, Self::Error> {
+}
+impl TryFrom<Ipld> for Manifest {
+    type Error = ManifestError;
+    fn try_from(ipld: Ipld) -> Result<Self, ManifestError> {
         match ipld {
             Ipld::Map(map) => {
                 let version = match map.get("version") {
-                    Some(ipld) => Version::from_ipld(ipld)?,
+                    Some(ipld) => Version::try_from(ipld.clone())?,
                     None => return Err(ManifestError::MissingField("version".to_string())),
                 };
                 let previosus = match map.get("previosus") {
