@@ -4,6 +4,7 @@ use std::io::Read;
 use std::ops::Deref;
 use std::str::FromStr;
 
+use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::uri::Scheme;
 use ipfs_api_backend_hyper::request::{Add as AddRequest, BlockPut as BlockPutRequest};
@@ -148,13 +149,32 @@ impl IpfsRpc {
     /// Get Block from IPFS
     pub async fn get_block(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
         let stream = self.block_get(&cid.to_string());
+
         let block_data = stream.map_ok(|chunk| chunk.to_vec()).try_concat().await?;
         Ok(block_data)
+    }
+
+    pub async fn get_block_send_safe(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
+        let cid = cid.clone();
+        let client = self.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(client.get_block(&cid))
+                .map_err(|e| IpfsRpcError::from(e))
+        })
+        .await
+        .map_err(|e| {
+            IpfsRpcError::Default(anyhow::anyhow!("blockstore tokio runtime error: {e}").into())
+        })??;
+
+        Ok(response)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum IpfsRpcError {
+    #[error("default error: {0}")]
+    Default(#[from] anyhow::Error),
     #[error("url parse error")]
     Url(#[from] url::ParseError),
     #[error("http error")]
