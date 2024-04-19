@@ -1,16 +1,14 @@
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
-use libipld::Ipld;
 use time::OffsetDateTime;
 
-use super::Cid;
+use super::Ipld;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Object {
     created_at: OffsetDateTime,
     updated_at: OffsetDateTime,
-    data: Cid,
     metadata: BTreeMap<String, Ipld>,
 }
 
@@ -19,8 +17,6 @@ impl Default for Object {
         Object {
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
-            // TODO: i might not need the cid here, but we'll see
-            data: Cid::default(),
             metadata: BTreeMap::new(),
         }
     }
@@ -42,10 +38,6 @@ impl Into<Ipld> for Object {
         map.insert(
             OBJECT_UPDATED_AT_LABEL.to_string(),
             Ipld::Integer(self.updated_at().unix_timestamp_nanos()),
-        );
-        map.insert(
-            OBJECT_DATA_LABEL.to_string(),
-            Ipld::Link(self.data().clone()),
         );
         map.insert(
             OBJECT_METADATA_LABEL.to_string(),
@@ -83,15 +75,6 @@ impl TryFrom<Ipld> for Object {
         };
         let updated_at = OffsetDateTime::from_unix_timestamp_nanos(updated_at_int)?;
 
-        let data = match map.get(OBJECT_DATA_LABEL) {
-            Some(Ipld::Link(data)) => data.clone(),
-            _ => {
-                return Err(ObjectIpldError::MissingMapMember(
-                    OBJECT_DATA_LABEL.to_string(),
-                ))
-            }
-        };
-
         let metadata = match map.get(OBJECT_METADATA_LABEL) {
             Some(Ipld::Map(metadata)) => metadata.clone(),
             _ => {
@@ -104,13 +87,24 @@ impl TryFrom<Ipld> for Object {
         Ok(Self {
             created_at,
             updated_at,
-            data,
             metadata,
         })
     }
 }
 
 impl Object {
+    pub fn new(maybe_metadata: Option<&BTreeMap<String, Ipld>>) -> Self {
+        let metadata = match maybe_metadata {
+            Some(metadata) => metadata.clone(),
+            None => BTreeMap::new(),
+        };
+        Object {
+            created_at: OffsetDateTime::now_utc(),
+            updated_at: OffsetDateTime::now_utc(),
+            metadata,
+        }
+    }
+
     /* Getters */
 
     pub fn created_at(&self) -> &OffsetDateTime {
@@ -121,10 +115,6 @@ impl Object {
         &self.updated_at
     }
 
-    pub fn data(&self) -> &Cid {
-        &self.data
-    }
-
     pub fn metadata(&self) -> &BTreeMap<String, Ipld> {
         &self.metadata
     }
@@ -132,15 +122,11 @@ impl Object {
     /* Updaters */
 
     /// Update the data, metadata or both
-    pub fn update(&mut self, data: Option<Cid>, metadata: Option<BTreeMap<String, Ipld>>) {
+    pub fn update(&mut self, maybe_metadata: Option<&BTreeMap<String, Ipld>>) {
         self.updated_at = OffsetDateTime::now_utc();
-        match data {
-            Some(cid) => self.data = cid,
-            None => {}
-        }
-        match metadata {
+        match maybe_metadata {
             Some(metadata) => {
-                self.metadata = metadata;
+                self.metadata = metadata.clone();
             }
             None => {}
         }

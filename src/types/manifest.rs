@@ -13,12 +13,8 @@ pub struct Manifest {
     version: Version,
     /// Previous manifest CID
     previosus: Cid,
-    // NOTE: it would be good to research the extent to which you can customize gateway traversal
-    // and response generation to allow for a more "native" experience
-    /// Root CID of the store's content -- implemented as links to enable Gateway traversal
+    /// Root node CID
     root: Cid,
-    /// Map to links to object blocks
-    objects: BTreeMap<PathBuf, Cid>,
 }
 
 impl Into<Ipld> for Manifest {
@@ -27,15 +23,6 @@ impl Into<Ipld> for Manifest {
         map.insert("version".to_string(), self.version.clone().into());
         map.insert("previosus".to_string(), Ipld::Link(self.previous().clone()));
         map.insert("root".to_string(), Ipld::Link(self.root.clone()));
-        map.insert(
-            "objects".to_string(),
-            Ipld::Map(
-                self.objects
-                    .iter()
-                    .map(|(k, v)| (k.to_string_lossy().to_string(), Ipld::Link(v.clone())))
-                    .collect(),
-            ),
-        );
         Ipld::Map(map)
     }
 }
@@ -57,30 +44,11 @@ impl TryFrom<Ipld> for Manifest {
                     Some(Ipld::Link(cid)) => cid.clone(),
                     _ => return Err(ManifestError::MissingField("root link".to_string())),
                 };
-                let objects = match map.get("objects") {
-                    Some(Ipld::Map(objects)) => objects
-                        .iter()
-                        .map(|(k, v)| {
-                            let path = PathBuf::from(k);
-                            let cid = match v {
-                                Ipld::Link(cid) => cid.clone(),
-                                _ => {
-                                    return Err(ManifestError::MissingField(
-                                        "objects link".to_string(),
-                                    ))
-                                }
-                            };
-                            Ok((path, cid))
-                        })
-                        .collect::<Result<BTreeMap<PathBuf, Cid>, ManifestError>>()?,
-                    _ => return Err(ManifestError::MissingField("objects map".to_string())),
-                };
 
                 Ok(Manifest {
                     version,
                     previosus,
                     root,
-                    objects,
                 })
             }
             _ => Err(ManifestError::MissingField("map".to_string())),
@@ -101,16 +69,8 @@ impl Manifest {
         &self.root
     }
 
-    pub fn objects(&self) -> &BTreeMap<PathBuf, Cid> {
-        &self.objects
-    }
-
     pub fn set_root(&mut self, cid: Cid) {
         self.root = cid;
-    }
-
-    pub fn link_object(&mut self, path: PathBuf, cid: Cid) {
-        self.objects.insert(path, cid);
     }
 }
 

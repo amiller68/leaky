@@ -501,26 +501,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "dumb-store"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-recursion",
- "bytes",
- "chrono",
- "futures-util",
- "http",
- "ipfs-api-backend-hyper",
- "libipld",
- "rand",
- "serde",
- "serde_json",
- "thiserror",
- "time",
- "tokio",
- "url",
- "wnfs",
-]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "either"
@@ -931,6 +915,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 dependencies = [
  "spin",
+]
+
+[[package]]
+name = "leaky"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-recursion",
+ "bytes",
+ "chrono",
+ "dotenvy",
+ "futures-util",
+ "http",
+ "ipfs-api-backend-hyper",
+ "libipld",
+ "rand",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "tokio",
+ "url",
+ "wnfs",
 ]
 
 [[package]]

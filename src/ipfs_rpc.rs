@@ -88,6 +88,23 @@ impl IpfsRpc {
         Ok(cid)
     }
 
+    /// Get raw data from Ipfs. This will traverse the dag and return the raw data
+    /// # Arguments
+    /// * cid: the Cid of the data to get
+    /// # Returns
+    /// * the raw data
+    /// Note: this will not return the raw data if the data is not raw
+    /// Note: this will not return the raw data if the data is not pinned
+    pub async fn cat_data(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
+        let response_stream = self
+            .cat(&cid.to_string())
+            .map_ok(|chunk| chunk.to_vec())
+            .try_concat()
+            .await?;
+        let response = response_stream;
+        Ok(response)
+    }
+
     /// Put a block to the RPC endpoint. Provides control over the codec and multihash
     /// # Arguments
     /// * codec: the codec to use for the block
@@ -198,6 +215,7 @@ mod tests {
         let data: Vec<u8> = (0..1024).map(|_| rng.gen()).collect();
         Cursor::new(data)
     }
+
     #[tokio::test]
     async fn test_add_data_sha3_256() {
         let ipfs = IpfsRpc::default();
@@ -207,6 +225,17 @@ mod tests {
         assert_eq!(cid.version(), libipld::cid::Version::V1);
         assert_eq!(IpldCodec::try_from(cid.codec()).unwrap(), IpldCodec::Raw);
         assert_eq!(cid.hash().code(), 0x16);
+    }
+
+    #[tokio::test]
+    async fn test_add_data_cat_data() {
+        let ipfs = IpfsRpc::default();
+        let data = std::io::Cursor::new(b"hello world");
+        let mh_code = MhCode::Sha3_256;
+        let cid = ipfs.add_data(mh_code, data).await.unwrap();
+        let cat_data = ipfs.cat_data(&cid).await.unwrap();
+        assert_eq!(cat_data.len(), 11);
+        assert_eq!(cat_data, b"hello world");
     }
 
     #[tokio::test]
