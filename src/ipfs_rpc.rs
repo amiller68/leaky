@@ -1,15 +1,14 @@
-// TODO: its a dumpster fire, but it works
 use std::convert::TryFrom;
 use std::io::Read;
 use std::ops::Deref;
 use std::str::FromStr;
 
-use bytes::Bytes;
 use futures_util::TryStreamExt;
 use http::uri::Scheme;
 use ipfs_api_backend_hyper::request::{Add as AddRequest, BlockPut as BlockPutRequest};
 use ipfs_api_backend_hyper::IpfsApi;
 use ipfs_api_backend_hyper::{IpfsClient, TryFromUri};
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::types::{Cid, IpldCodec, MhCode};

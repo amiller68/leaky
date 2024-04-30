@@ -1,8 +1,5 @@
-use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::path::PathBuf;
 
-use super::object::Object;
 use super::version::Version;
 use super::{Cid, Ipld};
 
@@ -71,6 +68,10 @@ impl Manifest {
 
     pub fn set_root(&mut self, cid: Cid) {
         self.root = cid;
+    }
+
+    pub fn set_previous(&mut self, cid: Cid) {
+        self.previosus = cid;
     }
 }
 

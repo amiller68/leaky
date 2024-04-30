@@ -7,12 +7,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use libipld::block::Block;
-use libipld::cbor::DagCborCodec;
 use libipld::store::DefaultParams;
 use url::Url;
 
 use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
-use crate::types::{Cid, Ipld, IpldCodec, Manifest, MhCode, Node, Object};
+use crate::types::{Cid, DagCborCodec, Ipld, IpldCodec, Manifest, MhCode, Node, Object, Version};
 
 #[derive(Clone)]
 pub struct Leaky {
@@ -46,6 +45,16 @@ impl Leaky {
             Some(cid) => Ok(cid),
             None => Err(LeakyError::NoCid),
         }
+    }
+
+    pub fn version(&self) -> Version {
+        self.manifest
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .version()
+            .clone()
     }
 
     /* Sync functions */
@@ -94,8 +103,11 @@ impl Leaky {
             self.put::<Ipld>(&object).await?;
         }
 
+        let previous_cid = self.cid()?;
+
         // Push the manifest to ipfs_rpc
-        let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
+        let mut manifest = self.manifest.as_ref().unwrap().lock().unwrap();
+        manifest.set_previous(previous_cid);
         let cid = self.put::<Manifest>(&manifest).await?;
 
         // Uhh that should be it
@@ -107,10 +119,10 @@ impl Leaky {
 
     pub async fn add<R>(
         &mut self,
-        path: PathBuf,
+        path: &PathBuf,
         data: R,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-    ) -> Result<(), LeakyError>
+    ) -> Result<Cid, LeakyError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
@@ -123,7 +135,7 @@ impl Leaky {
         manifest.set_root(new_root_node_cid);
         let manifest_cid = self.put::<Manifest>(&manifest).await?;
         self.cid = Some(manifest_cid);
-        Ok(())
+        Ok(data_cid)
     }
 
     pub async fn ls(&self, path: PathBuf) -> Result<BTreeMap<String, Cid>, LeakyError> {
@@ -366,7 +378,7 @@ mod test {
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
-        leaky.add(PathBuf::from("foo"), data, None).await.unwrap();
+        leaky.add(&PathBuf::from("foo"), data, None).await.unwrap();
     }
 
     #[tokio::test]
@@ -378,7 +390,7 @@ mod test {
         let mut metadata = BTreeMap::new();
         metadata.insert("foo".to_string(), Ipld::String("bar".to_string()));
         leaky
-            .add(PathBuf::from("foo"), data, Some(&metadata))
+            .add(&PathBuf::from("foo"), data, Some(&metadata))
             .await
             .unwrap();
     }
@@ -389,7 +401,7 @@ mod test {
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
-        leaky.add(PathBuf::from("bar"), data, None).await.unwrap();
+        leaky.add(&PathBuf::from("bar"), data, None).await.unwrap();
         let get_data = leaky.cat(PathBuf::from("bar")).await.unwrap();
         assert_eq!(data, get_data);
     }
@@ -400,7 +412,7 @@ mod test {
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
-        leaky.add(PathBuf::from("bar"), data, None).await.unwrap();
+        leaky.add(&PathBuf::from("bar"), data, None).await.unwrap();
         let links = leaky.ls(PathBuf::from("")).await.unwrap();
         assert_eq!(links.len(), 1);
     }
@@ -412,62 +424,8 @@ mod test {
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
         leaky
-            .add(PathBuf::from("foo/bar/buzz"), data, None)
+            .add(&PathBuf::from("foo/bar/buzz"), data, None)
             .await
             .unwrap();
     }
-
-    /*
-        #[tokio::test]
-        async fn roundtrip_object() {
-            let backend = Leaky::default();
-            let object = Object::default();
-            let cid = backend.put::<Object>(&object).await.unwrap();
-            let object2 = backend.get::<Object>(&cid).await.unwrap();
-            assert_eq!(object, object2);
-        }
-
-        #[tokio::test]
-        async fn roundtrip_manifest() {
-            let backend = Leaky::default();
-            let manifest = Manifest::default();
-            let cid = backend.put::<Manifest>(&manifest).await.unwrap();
-            let manifest2 = backend.get::<Manifest>(&cid).await.unwrap();
-            assert_eq!(manifest, manifest2);
-        }
-
-        #[tokio::test]
-        async fn roundtrip_node() {
-            let backend = Leaky::default();
-            let node = Node::default();
-            let cid = backend.put::<Node>(&node).await.unwrap();
-            let node2 = backend.get::<Node>(&cid).await.unwrap();
-            assert_eq!(node, node2);
-        }
-
-        #[tokio::test]
-        async fn insert_object() {
-            let mut backend = Leaky::default();
-            backend.init().await.unwrap();
-            // Make a simple object around some raw data
-            let mut object = Object::default();
-            let data_cid = backend.add_data("foo".as_bytes()).await.unwrap();
-            object.update(Some(data_cid), None);
-            let path = PathBuf::from("foo/buzz/bar");
-            backend
-                .clone()
-                .add_object(path.clone(), &object)
-                .await
-                .unwrap();
-            let cid = backend.push_links().await.unwrap();
-
-            let mut backend_2 = Leaky::default();
-            backend_2.pull_links(&cid).await.unwrap();
-
-            assert_eq!(
-                backend.manifest.unwrap().lock().unwrap().root(),
-                backend_2.manifest.unwrap().lock().unwrap().root()
-            );
-        }
-    */
 }
