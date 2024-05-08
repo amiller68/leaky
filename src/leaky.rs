@@ -2,16 +2,38 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::Read;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use libipld::block::Block;
-use libipld::store::DefaultParams;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
-use crate::types::{Cid, DagCborCodec, Ipld, IpldCodec, Manifest, MhCode, Node, Object, Version};
+use crate::types::{
+    Block, Cid, DagCborCodec, DefaultParams, Ipld, IpldCodec, Manifest, MhCode, Node,
+};
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct BlockCache(HashMap<String, Ipld>);
+
+impl Deref for BlockCache {
+    type Target = HashMap<String, Ipld>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for BlockCache {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+fn cid_string(cid: &Cid) -> String {
+    cid.to_string()
+}
 
 #[derive(Clone)]
 pub struct Leaky {
@@ -19,7 +41,15 @@ pub struct Leaky {
 
     cid: Option<Cid>,
     manifest: Option<Arc<Mutex<Manifest>>>,
-    block_cache: Arc<Mutex<HashMap<Cid, Ipld>>>,
+    // This should probably be an option
+    block_cache: Arc<Mutex<BlockCache>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LeakyDisk {
+    manifest: Manifest,
+    block_cache: BlockCache,
+    cid: Cid,
 }
 
 impl Default for Leaky {
@@ -36,7 +66,7 @@ impl Leaky {
             ipfs_rpc,
             cid: None,
             manifest: None,
-            block_cache: Arc::new(Mutex::new(HashMap::new())),
+            block_cache: Arc::new(Mutex::new(BlockCache::default())),
         })
     }
 
@@ -47,14 +77,12 @@ impl Leaky {
         }
     }
 
-    pub fn version(&self) -> Version {
-        self.manifest
-            .as_ref()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .version()
-            .clone()
+    pub fn manifest(&self) -> Result<Manifest, LeakyError> {
+        Ok(self.manifest.as_ref().unwrap().lock().unwrap().to_owned())
+    }
+
+    pub fn block_cache(&self) -> Result<BlockCache, LeakyError> {
+        Ok(self.block_cache.lock().unwrap().to_owned())
     }
 
     /* Sync functions */
@@ -71,15 +99,31 @@ impl Leaky {
         // Create a new root node
         let node = Node::default();
         // Put the node into the block_cache
-        let cid = self.put_block_cache::<Node>(&node).await?;
+        let cid = self.put_cache::<Node>(&node).await?;
         // Set the root cid in the manifest
         let mut manifest = Manifest::default();
         manifest.set_root(cid);
 
         let manifest_cid = self.put::<Manifest>(&manifest).await?;
 
-        self.cid = Some(manifest_cid.clone());
+        self.cid = Some(manifest_cid);
         self.manifest = Some(Arc::new(Mutex::new(manifest)));
+        Ok(())
+    }
+
+    pub async fn load(
+        &mut self,
+        manifest: &Manifest,
+        block_cache: BlockCache,
+    ) -> Result<(), LeakyError> {
+        // Set the block cache
+        self.block_cache = Arc::new(Mutex::new(block_cache));
+        // Set the manifest
+        let manifest_cid = self.put_cache::<Manifest>(manifest).await?;
+        self.manifest = Some(Arc::new(Mutex::new(manifest.clone())));
+        // Set the cid
+        self.cid = Some(manifest_cid);
+
         Ok(())
     }
 
@@ -92,15 +136,16 @@ impl Leaky {
         self.pull_links(manifest.root()).await?;
 
         // Now just update the internal state and return
-        self.cid = Some(cid.clone());
+        self.cid = Some(*cid);
         self.manifest = Some(Arc::new(Mutex::new(manifest)));
         Ok(())
     }
 
     pub async fn push(&mut self) -> Result<(), LeakyError> {
         // Iterate over the block cache and push all the blocks to ipfs_rpc
-        for (_cid, object) in self.block_cache.lock().unwrap().iter() {
-            self.put::<Ipld>(&object).await?;
+        for (cid_str, object) in self.block_cache.lock().unwrap().iter() {
+            let cid = self.put::<Ipld>(&object).await?;
+            assert_eq!(cid_str, &cid_string(&cid));
         }
 
         let previous_cid = self.cid()?;
@@ -111,8 +156,15 @@ impl Leaky {
         let cid = self.put::<Manifest>(&manifest).await?;
 
         // Uhh that should be it
-        self.cid = Some(cid.clone());
+        self.cid = Some(cid);
         Ok(())
+    }
+
+    /* Block management and Pruning */
+
+    // Prune the local block cache of un-used blocks
+    pub async fn prune(&mut self) -> Result<(), LeakyError> {
+        todo!()
     }
 
     /* Bucket functions */
@@ -122,11 +174,17 @@ impl Leaky {
         path: &PathBuf,
         data: R,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
+        hash_only: bool,
     ) -> Result<Cid, LeakyError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
-        let data_cid = self.add_data(data).await?;
+        let data_cid;
+        if hash_only {
+            data_cid = self.hash_data(data).await?;
+        } else {
+            data_cid = self.add_data(data).await?;
+        }
         let mut manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let root_node_cid = manifest.root();
         let new_root_node_cid = self
@@ -141,14 +199,14 @@ impl Leaky {
     pub async fn ls(&self, path: PathBuf) -> Result<BTreeMap<String, Cid>, LeakyError> {
         let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let root_node_cid = manifest.root();
-        let node = self.get_block_cache::<Node>(&root_node_cid).await?;
+        let node = self.get_cache::<Node>(&root_node_cid).await?;
         let mut node = node;
 
         // Iterate on the remaining path
         for part in path.iter() {
             let next = part.to_string_lossy().to_string();
             let next_cid = node.get_link(&next).unwrap();
-            node = self.get_block_cache::<Node>(&next_cid).await?;
+            node = self.get_cache::<Node>(&next_cid).await?;
         }
 
         // Get the links from the node
@@ -159,7 +217,7 @@ impl Leaky {
     pub async fn cat(&self, path: PathBuf) -> Result<Vec<u8>, LeakyError> {
         let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let root_node_cid = manifest.root();
-        let node = self.get_block_cache::<Node>(&root_node_cid).await?;
+        let node = self.get_cache::<Node>(&root_node_cid).await?;
         let mut node = node;
         // Get the dir path
         let dir_path = path
@@ -173,7 +231,7 @@ impl Leaky {
         for part in dir_path.iter() {
             let next = part.to_string_lossy().to_string();
             let next_cid = node.get_link(&next).unwrap();
-            node = self.get_block_cache::<Node>(&next_cid).await?;
+            node = self.get_cache::<Node>(&next_cid).await?;
         }
 
         // Get the link from the node
@@ -191,7 +249,7 @@ impl Leaky {
         self.block_cache
             .lock()
             .unwrap()
-            .insert(cid.clone(), node.clone().into());
+            .insert(cid_string(cid), node.clone().into());
         // Recurse from down the root node, pulling all the nodes
         for (_name, link) in node.clone().iter() {
             match link {
@@ -217,9 +275,8 @@ impl Leaky {
         maybe_link: Option<&Cid>,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
     ) -> Result<Cid, LeakyError> {
-        println!("upsert_link_and_object: {:?}", path);
         // Get the node we're going to update
-        let mut node = self.get::<Node>(cid).await?;
+        let mut node = self.get_cache::<Node>(cid).await?;
         let next = path.iter().next().unwrap().to_string_lossy().to_string();
 
         // Determine if the path is empty
@@ -242,7 +299,7 @@ impl Leaky {
                         node.del(&next);
                     }
                 }
-                let cid = self.put_block_cache::<Node>(&node).await?;
+                let cid = self.put_cache::<Node>(&node).await?;
                 Ok(cid)
             }
             // We gave more to recurse on
@@ -251,20 +308,20 @@ impl Leaky {
                 let remaining = path.iter().skip(1).collect::<PathBuf>();
                 // Determine if the next part of the path exists within the tree
                 let next_cid = if let Some(next_cid) = node.get_link(&next) {
-                    next_cid.clone()
+                    next_cid
                 } else {
                     // Ok create a new node to hold this part of the path
-                    let mut new_node = Node::default();
-                    self.put_block_cache::<Node>(&new_node).await?
+                    let new_node = Node::default();
+                    self.put_cache::<Node>(&new_node).await?
                 };
                 // Upsert the remaining path components into the node
                 let cid = &self
                     .upsert_link_and_object(&next_cid, &remaining, maybe_link, maybe_metadata)
                     .await?;
                 // Insert the updated link
-                node.put_link(&next, &cid);
+                node.put_link(&next, cid);
                 // Put the updated node
-                let cid = self.put_block_cache::<Node>(&node).await?;
+                let cid = self.put_cache::<Node>(&node).await?;
                 // Okie doke!
                 Ok(cid)
             }
@@ -273,7 +330,15 @@ impl Leaky {
 
     /* Data operations */
 
-    async fn add_data<R>(&self, data: R) -> Result<Cid, LeakyError>
+    pub async fn hash_data<R>(&self, data: R) -> Result<Cid, LeakyError>
+    where
+        R: Read + Send + Sync + 'static + Unpin,
+    {
+        let cid = self.ipfs_rpc.hash_data(MhCode::Blake3_256, data).await?;
+        Ok(cid)
+    }
+
+    pub async fn add_data<R>(&self, data: R) -> Result<Cid, LeakyError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
@@ -291,7 +356,7 @@ impl Leaky {
         B: TryFrom<Ipld>,
     {
         let data = self.ipfs_rpc.get_block_send_safe(cid).await?;
-        let block = Block::<DefaultParams>::new(cid.clone(), data).unwrap();
+        let block = Block::<DefaultParams>::new(*cid, data).unwrap();
         let ipld = block.decode::<DagCborCodec, Ipld>().unwrap();
         let object = B::try_from(ipld).map_err(|_| LeakyError::Ipld)?;
         Ok(object)
@@ -312,17 +377,18 @@ impl Leaky {
         Ok(cid)
     }
 
-    async fn get_block_cache<B>(&self, cid: &Cid) -> Result<B, LeakyError>
+    async fn get_cache<B>(&self, cid: &Cid) -> Result<B, LeakyError>
     where
         B: TryFrom<Ipld>,
     {
         let block_cache = self.block_cache.lock().unwrap();
-        let ipld = block_cache.get(cid).unwrap();
+        let cid_str = cid_string(cid);
+        let ipld = block_cache.get(&cid_str).unwrap();
         let object = B::try_from(ipld.clone()).map_err(|_| LeakyError::Ipld)?;
         Ok(object)
     }
 
-    async fn put_block_cache<B>(&self, object: &B) -> Result<Cid, LeakyError>
+    async fn put_cache<B>(&self, object: &B) -> Result<Cid, LeakyError>
     where
         B: Into<Ipld> + Clone,
     {
@@ -332,13 +398,13 @@ impl Leaky {
             &object.clone().into(),
         )
         .unwrap();
-        let cid = block.cid().clone();
+        let cid = block.cid();
 
         self.block_cache
             .lock()
             .unwrap()
-            .insert(cid.clone(), object.clone().into());
-        Ok(cid.clone())
+            .insert(cid_string(cid), object.clone().into());
+        Ok(*cid)
     }
 }
 
@@ -352,6 +418,11 @@ pub enum LeakyError {
     Ipld,
     #[error("cid is not set")]
     NoCid,
+
+    // DISK IO ERRORS
+    #[cfg(not(target_arch = "wasm32"))]
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
@@ -372,13 +443,17 @@ mod test {
         leaky.pull(&cid).await.unwrap();
         assert_eq!(leaky.cid().unwrap(), cid);
     }
+
     #[tokio::test]
     async fn add() {
         let cid = empty_leaky_cid().await;
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
-        leaky.add(&PathBuf::from("foo"), data, None).await.unwrap();
+        leaky
+            .add(&PathBuf::from("foo"), data, None, true)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -390,7 +465,7 @@ mod test {
         let mut metadata = BTreeMap::new();
         metadata.insert("foo".to_string(), Ipld::String("bar".to_string()));
         leaky
-            .add(&PathBuf::from("foo"), data, Some(&metadata))
+            .add(&PathBuf::from("foo"), data, Some(&metadata), true)
             .await
             .unwrap();
     }
@@ -401,7 +476,10 @@ mod test {
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
-        leaky.add(&PathBuf::from("bar"), data, None).await.unwrap();
+        leaky
+            .add(&PathBuf::from("bar"), data, None, false)
+            .await
+            .unwrap();
         let get_data = leaky.cat(PathBuf::from("bar")).await.unwrap();
         assert_eq!(data, get_data);
     }
@@ -412,7 +490,10 @@ mod test {
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
-        leaky.add(&PathBuf::from("bar"), data, None).await.unwrap();
+        leaky
+            .add(&PathBuf::from("bar"), data, None, true)
+            .await
+            .unwrap();
         let links = leaky.ls(PathBuf::from("")).await.unwrap();
         assert_eq!(links.len(), 1);
     }
@@ -424,7 +505,43 @@ mod test {
         leaky.pull(&cid).await.unwrap();
         let data = "foo".as_bytes();
         leaky
-            .add(&PathBuf::from("foo/bar/buzz"), data, None)
+            .add(&PathBuf::from("foo/bar/buzz"), data, None, true)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_pull_ls() {
+        let cid = empty_leaky_cid().await;
+        let mut leaky = Leaky::default();
+        leaky.pull(&cid).await.unwrap();
+        let data = "foo".as_bytes();
+        leaky
+            .add(&PathBuf::from("bar"), data, None, true)
+            .await
+            .unwrap();
+        leaky.push().await.unwrap();
+        let cid = leaky.cid().unwrap();
+        let mut leaky = Leaky::default();
+        leaky.pull(&cid).await.unwrap();
+        assert_eq!(leaky.ls(PathBuf::from("")).await.unwrap().len(),);
+    }
+
+    #[tokio::test]
+    async fn add_add_deep() {
+        let cid = empty_leaky_cid().await;
+        let mut leaky = Leaky::default();
+        leaky.pull(&cid).await.unwrap();
+
+        let data = "foo".as_bytes();
+        leaky
+            .add(&PathBuf::from("foo/bar"), data, None, true)
+            .await
+            .unwrap();
+
+        let data = "bang".as_bytes();
+        leaky
+            .add(&PathBuf::from("foo/bug"), data, None, true)
             .await
             .unwrap();
     }

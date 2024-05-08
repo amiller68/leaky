@@ -1,10 +1,9 @@
 use std::fmt::Display;
 
-use leaky::prelude::*;
-
 mod cli;
 
-use cli::{init, stage, Cli, Command, InitError, Parser, StageError};
+use cli::ops::{add, init, push, stat, AddError, InitError, PushError, StatError};
+use cli::{Cli, Command, Parser};
 
 #[tokio::main]
 async fn main() {
@@ -17,12 +16,21 @@ pub async fn run() -> Result<(), AppError> {
     match args.command {
         Command::Init { ipfs_rpc } => {
             let cid = init(ipfs_rpc).await?;
-            pretty_print(format!("LeakyBucket @ {:?}", cid));
+            pretty_print(format!("LeakyBucket @ {}", cid));
         }
-        Command::Stage => {
-            let cid = stage().await?;
-            pretty_print(format!("LeakyBucket @ {:?}", cid));
+        Command::Add => {
+            let cid = add().await?;
+            pretty_print(format!("LeakyBucket @ {}", cid));
         }
+        Command::Stat => {
+            let stats = stat().await?;
+            println!("{}", stats);
+        }
+        Command::Push => {
+            let cid = push().await?;
+            pretty_print(format!("LeakyBucket @ {}", cid.to_string()));
+        }
+
         /*
                 Command::Add { root, path } => {
                     leaky.pull(&root).await?;
@@ -61,7 +69,11 @@ pub enum AppError {
     #[error("Init error: {0}")]
     Init(#[from] InitError),
     #[error("Stage error: {0}")]
-    Stage(#[from] StageError),
+    Add(#[from] AddError),
+    #[error("Stat error: {0}")]
+    Stat(#[from] StatError),
+    #[error("Push error: {0}")]
+    Push(#[from] PushError),
 }
 
 fn capture_error<T>(result: Result<T, AppError>) {

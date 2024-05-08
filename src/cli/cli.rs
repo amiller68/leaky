@@ -1,4 +1,3 @@
-use leaky::prelude::Cid;
 use std::path::PathBuf;
 
 use clap::{command, Subcommand};
@@ -19,15 +18,14 @@ pub enum Command {
         #[clap(long, short)]
         ipfs_rpc: Url,
     },
-    Stage,
+    Add,
+    Stat,
+    Push,
     Ls {
-        #[clap(long, short)]
-        root: Cid,
         #[clap(long, short)]
         path: PathBuf,
     },
     Cat {
-        root: Cid,
         path: PathBuf,
     },
 }

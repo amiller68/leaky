@@ -1,15 +1,17 @@
 use std::convert::TryFrom;
 
+use serde::{Deserialize, Serialize};
+
 use super::version::Version;
 use super::{Cid, Ipld};
 
 /// Manifest
-#[derive(Default, Debug, PartialEq, Clone)]
+#[derive(Default, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     /// Build version
     version: Version,
     /// Previous manifest CID
-    previosus: Cid,
+    previous: Cid,
     /// Root node CID
     root: Cid,
 }
@@ -18,7 +20,7 @@ impl Into<Ipld> for Manifest {
     fn into(self) -> Ipld {
         let mut map = std::collections::BTreeMap::new();
         map.insert("version".to_string(), self.version.clone().into());
-        map.insert("previosus".to_string(), Ipld::Link(self.previous().clone()));
+        map.insert("previous".to_string(), Ipld::Link(self.previous().clone()));
         map.insert("root".to_string(), Ipld::Link(self.root.clone()));
         Ipld::Map(map)
     }
@@ -33,18 +35,18 @@ impl TryFrom<Ipld> for Manifest {
                     Some(ipld) => Version::try_from(ipld.clone())?,
                     None => return Err(ManifestError::MissingField("version".to_string())),
                 };
-                let previosus = match map.get("previosus") {
-                    Some(Ipld::Link(cid)) => cid.clone(),
-                    _ => return Err(ManifestError::MissingField("previosus link".to_string())),
+                let previous = match map.get("previous") {
+                    Some(Ipld::Link(cid)) => *cid,
+                    _ => return Err(ManifestError::MissingField("previous link".to_string())),
                 };
                 let root = match map.get("root") {
-                    Some(Ipld::Link(cid)) => cid.clone(),
+                    Some(Ipld::Link(cid)) => *cid,
                     _ => return Err(ManifestError::MissingField("root link".to_string())),
                 };
 
                 Ok(Manifest {
                     version,
-                    previosus,
+                    previous,
                     root,
                 })
             }
@@ -59,7 +61,7 @@ impl Manifest {
     }
 
     pub fn previous(&self) -> &Cid {
-        &self.previosus
+        &self.previous
     }
 
     pub fn root(&self) -> &Cid {
@@ -71,7 +73,7 @@ impl Manifest {
     }
 
     pub fn set_previous(&mut self, cid: Cid) {
-        self.previosus = cid;
+        self.previous = cid;
     }
 }
 

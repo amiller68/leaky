@@ -24,7 +24,6 @@ impl Default for Object {
 
 const OBJECT_CREATED_AT_LABEL: &str = "created_at";
 const OBJECT_UPDATED_AT_LABEL: &str = "updated_at";
-const OBJECT_DATA_LABEL: &str = "data";
 const OBJECT_METADATA_LABEL: &str = "metadata";
 
 impl Into<Ipld> for Object {

@@ -58,6 +58,31 @@ impl Deref for IpfsRpc {
 }
 
 impl IpfsRpc {
+    // TODO: LOCALIZE
+    // Hash raw data using the specified hash function
+    // # Arguments
+    // * code: the multihash code to use for the hash
+    // * data: the data to hash. This can be anything that implements Read. Should be safely passable between threads
+    // # Returns
+    // * the Cid of the data
+    pub async fn hash_data<R>(&self, code: MhCode, data: R) -> Result<Cid, IpfsRpcError>
+    where
+        R: Read + Send + Sync + 'static + Unpin,
+    {
+        let hash = match code {
+            MhCode::Blake3_256 => "blake3",
+            MhCode::Sha3_256 => "sha3-256",
+            _ => DEFAULT_MH_TYPE,
+        };
+        let mut options = AddRequest::default();
+        options.hash = Some(hash);
+        options.cid_version = Some(DEFAULT_CID_VERSION);
+        options.only_hash = Some(true);
+        let response = self.add_with_options(data, options).await?;
+        let cid = Cid::from_str(&response.hash)?;
+        Ok(cid)
+    }
+
     /// Add raw data to Ipfs. This will implement chunking for you
     /// Do not use over data where you need control over codecs and chunking
     /// # Arguments
@@ -171,16 +196,16 @@ impl IpfsRpc {
     }
 
     pub async fn get_block_send_safe(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
-        let cid = cid.clone();
+        let cid = *cid;
         let client = self.clone();
         let response = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current()
                 .block_on(client.get_block(&cid))
-                .map_err(|e| IpfsRpcError::from(e))
+                .map_err(IpfsRpcError::from)
         })
         .await
         .map_err(|e| {
-            IpfsRpcError::Default(anyhow::anyhow!("blockstore tokio runtime error: {e}").into())
+            IpfsRpcError::Default(anyhow::anyhow!("blockstore tokio runtime error: {e}"))
         })??;
 
         Ok(response)

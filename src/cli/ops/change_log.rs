@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
+use leaky::prelude::*;
+
 use serde::{Deserialize, Serialize};
 
 // TODO: this is an akward way to do this, i could probably
@@ -17,7 +19,7 @@ pub enum StagedType {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ChangeType {
     Base,
-    Added,
+    Added { modified: bool },
     Modified,
     Removed,
 }
@@ -26,7 +28,7 @@ impl std::fmt::Display for ChangeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Self::Base => "\x1b[0;32mBase\x1b[0m",
-            Self::Added => "\x1b[0;32mAdded\x1b[0m",
+            Self::Added { .. } => "\x1b[0;32mAdded\x1b[0m",
             Self::Modified => "\x1b[0;33mModified\x1b[0m",
             Self::Removed => "\x1b[0;31mRemoved\x1b[0m",
         };
@@ -36,10 +38,10 @@ impl std::fmt::Display for ChangeType {
 
 /// Tracks what files are in the local clone and their hashes
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
-pub struct ChangeLog(BTreeMap<PathBuf, (blake3::Hash, ChangeType)>);
+pub struct ChangeLog(BTreeMap<PathBuf, (Cid, ChangeType)>);
 
 impl Deref for ChangeLog {
-    type Target = BTreeMap<PathBuf, (blake3::Hash, ChangeType)>;
+    type Target = BTreeMap<PathBuf, (Cid, ChangeType)>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

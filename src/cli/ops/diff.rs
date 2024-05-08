@@ -1,4 +1,3 @@
-use std::fs::File;
 use std::path::PathBuf;
 
 use leaky::prelude::*;
@@ -6,14 +5,11 @@ use leaky::prelude::*;
 use super::change_log::{ChangeLog, ChangeType};
 use super::utils;
 
-pub async fn diff() -> Result<ChangeLog, DiffError> {
-    println!("Diffing...");
-    let change_log = utils::load_change_log()?;
-    let mut base = change_log.clone();
+pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
+    let base: &mut ChangeLog = base;
     let mut update = base.clone();
     let next = utils::fs_tree()?;
-    let default_hash = blake3::Hasher::new().finalize();
-    println!("Diffing...");
+    let default_hash = Cid::default();
 
     // Insert the root directory hash into the change_log for comparison
     // This should always just get matched out and removed
@@ -23,7 +19,6 @@ pub async fn diff() -> Result<ChangeLog, DiffError> {
     let mut base_iter = base.iter();
     let mut next_iter = next.iter();
 
-    println!("Diffing...");
     let mut next_next = next_iter.next();
     let mut base_next = base_iter.next();
 
@@ -31,13 +26,18 @@ pub async fn diff() -> Result<ChangeLog, DiffError> {
         match (next_next.clone(), base_next) {
             // If these are both something we got some work to do
             (Some((_next_tree, next_path)), Some((base_path, (base_hash, base_type)))) => {
+                // Janky, but just append / to both paths
+                //  TODO: validate if this is safe with valid ./ or / paths
+                let next_path = PathBuf::from("./").join(next_path);
+                let base_path = &PathBuf::from("./").join(base_path);
+
                 // For each object, assuming we stay aligned on a sorted list of paths:
                 // If the base comes before then this file was removed
                 // strip off the base object and log the removal
                 if base_path < &next_path {
                     if !base_path.is_dir() {
                         match base_type {
-                            ChangeType::Added => {
+                            ChangeType::Added { .. } => {
                                 update.remove(base_path);
                             }
                             _ => {
@@ -54,10 +54,11 @@ pub async fn diff() -> Result<ChangeLog, DiffError> {
                 // strip off the next object and log the addition
                 if &next_path < base_path {
                     if !next_path.is_dir() {
-                        println!("Adding {:?}", next_path);
-                        let hash = utils::hash_file(&next_path)?;
-                        println!("Hashed {:?}", next_path);
-                        update.insert(next_path.clone(), (hash, ChangeType::Added));
+                        let hash = utils::hash_file(&next_path, &mut leaky).await?;
+                        update.insert(
+                            next_path.clone(),
+                            (hash, ChangeType::Added { modified: true }),
+                        );
                     }
                     next_next = next_iter.next();
                     continue;
@@ -68,23 +69,37 @@ pub async fn diff() -> Result<ChangeLog, DiffError> {
                     // These are either both files or both directories
                     // If they are both files then we need to compare hashes
                     if !next_path.is_dir() {
-                        println!("Comparing {:?}", next_path);
                         // If the hashes are different then the file was modified
                         // strip off the next object and log the modification
-                        let next_hash = utils::hash_file(&next_path)?;
-                        println!("Hashed {:?}", next_path);
+                        let next_hash = utils::hash_file(&next_path, &mut leaky).await?;
                         if base_hash != &next_hash {
                             match base_type {
-                                ChangeType::Added => {
-                                    update
-                                        .insert(base_path.clone(), (next_hash, ChangeType::Added));
+                                // If it has been added before, then it was modified
+                                ChangeType::Added { .. } => {
+                                    update.insert(
+                                        base_path.clone(),
+                                        (next_hash, ChangeType::Added { modified: true }),
+                                    );
                                 }
+                                // Otherwise it was just modified
                                 _ => {
                                     update.insert(
                                         base_path.clone(),
                                         (next_hash, ChangeType::Modified),
                                     );
                                 }
+                            }
+                        } else {
+                            match base_type {
+                                // If it has been added before, then it was modified
+                                ChangeType::Added { .. } => {
+                                    update.insert(
+                                        base_path.clone(),
+                                        (next_hash, ChangeType::Added { modified: false }),
+                                    );
+                                }
+                                // Otherwise it was just modified
+                                _ => {}
                             }
                         }
                     }
@@ -95,23 +110,24 @@ pub async fn diff() -> Result<ChangeLog, DiffError> {
                 }
             }
 
-            // Theres more old file than new, this file was removed
+            // Theres more new files than old, so this file was added
             (Some((_next_tree, next_path)), None) => {
                 if !next_path.is_dir() {
-                    println!("Adding {:?}", next_path);
-                    let hash = utils::hash_file(&next_path)?;
-                    println!("Hashed {:?}", next_path);
-                    update.insert(next_path.clone(), (hash, ChangeType::Added));
+                    let hash = utils::hash_file(&next_path, leaky).await?;
+                    update.insert(
+                        next_path.clone(),
+                        (hash, ChangeType::Added { modified: true }),
+                    );
                 }
                 next_next = next_iter.next();
                 continue;
             }
 
-            // There's more new files than old, this file was added
+            // There's more old files than new, so this file was removed
             (None, Some((base_path, (_base_hash, base_type)))) => {
                 if !base_path.is_dir() {
                     match base_type {
-                        ChangeType::Added => {
+                        ChangeType::Added { .. } => {
                             update.remove(base_path);
                         }
                         _ => {
@@ -129,7 +145,6 @@ pub async fn diff() -> Result<ChangeLog, DiffError> {
         }
     }
 
-    println!("Diffing...");
     Ok(update)
 }
 

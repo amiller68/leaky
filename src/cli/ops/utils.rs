@@ -1,4 +1,3 @@
-use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -10,97 +9,132 @@ use url::Url;
 
 use super::change_log::ChangeLog;
 
-pub const DEFAULT_LOCAL_LEAKY_DIR: &str = ".leaky";
-pub const DEFAULT_LEAKY_NAME: &str = "leaky.json";
+pub const DEFAULT_LOCAL_DIR: &str = ".leaky";
+pub const DEFAULT_CONFIG_NAME: &str = "leaky.conf";
+pub const DEFAULT_STATE_NAME: &str = "leaky.state";
 pub const DEFAULT_CHAGE_LOG_NAME: &str = "leaky.log";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LeakyConfig {
+pub struct OnDiskConfig {
+    pub ipfs_rpc_url: Url,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnDiskState {
     pub cid: Cid,
-    pub ipfs_rpc: Url,
+    pub manifest: Manifest,
+    pub block_cache: BlockCache,
 }
 
-pub fn init_leaky_config(ipfs_rpc: Url, cid: Cid) -> Result<()> {
-    let path = PathBuf::from(&format!(
-        "{}/{}",
-        DEFAULT_LOCAL_LEAKY_DIR, DEFAULT_LEAKY_NAME
-    ));
-    let config = LeakyConfig { cid, ipfs_rpc };
-    // Check if the config file already exists
-    if path.exists() {
-        return Err(anyhow::anyhow!("Config file already exists"));
+pub async fn init_on_disk(ipfs_rpc_url: Url, cid: Option<Cid>) -> Result<Leaky> {
+    let local_dir_path = PathBuf::from(DEFAULT_LOCAL_DIR);
+    let config_path = local_dir_path.join(PathBuf::from(DEFAULT_CONFIG_NAME));
+    let state_path = local_dir_path.join(PathBuf::from(DEFAULT_STATE_NAME));
+    let change_log_path = local_dir_path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
+
+    // Check whether the dir exists
+    if local_dir_path.exists() {
+        return Err(anyhow::anyhow!(
+            "Local directory already exists at {:?}",
+            local_dir_path
+        ));
     }
-    // make sure the directory exists
-    std::fs::create_dir_all(&path.parent().unwrap())?;
-    let mut file = std::fs::File::create(&path)?;
-    file.write_all(serde_json::to_string(&config)?.as_bytes())?;
-    Ok(())
-}
 
-pub async fn load_leaky() -> Result<Leaky> {
-    let path = PathBuf::from(&format!(
-        "{}/{}",
-        DEFAULT_LOCAL_LEAKY_DIR, DEFAULT_LEAKY_NAME
-    ));
+    // Initialize Leaky
+    let mut leaky = Leaky::new(ipfs_rpc_url.clone())?;
 
-    if !path.exists() {
-        return Err(anyhow::anyhow!("Config file does not exist"));
+    if let Some(cid) = cid {
+        leaky.pull(&cid).await?;
+    } else {
+        leaky.init().await?;
     }
-    let config = std::fs::read_to_string(path)?;
-    let leaky_config: LeakyConfig = serde_json::from_str(&config)?;
 
-    let mut leaky = Leaky::new(leaky_config.ipfs_rpc)?;
-    leaky.pull(&leaky_config.cid).await?;
+    let cid = leaky.cid()?;
+    let block_cache = leaky.block_cache()?;
+    let manifest = leaky.manifest()?;
+
+    let on_disk_config = OnDiskConfig { ipfs_rpc_url };
+
+    let on_disk_state = OnDiskState {
+        cid,
+        manifest,
+        block_cache,
+    };
+
+    // Write config to disk
+
+    std::fs::create_dir_all(&local_dir_path)?;
+    std::fs::write(config_path, serde_json::to_string(&on_disk_config)?)?;
+    std::fs::write(state_path, serde_json::to_string(&on_disk_state)?)?;
+    std::fs::write(change_log_path, serde_json::to_string(&ChangeLog::new())?)?;
+
     Ok(leaky)
 }
 
-pub async fn update_leaky(leaky: &mut Leaky) -> Result<()> {
-    let path = PathBuf::from(&format!(
-        "{}/{}",
-        DEFAULT_LOCAL_LEAKY_DIR, DEFAULT_LEAKY_NAME
-    ));
-    if !path.exists() {
-        return Err(anyhow::anyhow!("Config file does not exist"));
+pub async fn load_on_disk() -> Result<(Leaky, ChangeLog)> {
+    let local_dir_path = PathBuf::from(DEFAULT_LOCAL_DIR);
+    let config_path = local_dir_path.join(PathBuf::from(DEFAULT_CONFIG_NAME));
+    let state_path = local_dir_path.join(PathBuf::from(DEFAULT_STATE_NAME));
+    let change_log_path = local_dir_path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
+
+    if !local_dir_path.exists() {
+        return Err(anyhow::anyhow!("No leaky directory found"));
     }
-    leaky.push().await?;
+
+    let config_str = std::fs::read_to_string(config_path)?;
+    let config: OnDiskConfig = serde_json::from_str(&config_str)?;
+    let state_str = std::fs::read_to_string(state_path)?;
+    let state: OnDiskState = serde_json::from_str(&state_str)?;
+
+    let mut leaky = Leaky::new(config.ipfs_rpc_url)?;
+    leaky.load(&state.manifest, state.block_cache).await?;
+
+    // Check if the cid in config matches the cid in the state
     let cid = leaky.cid()?;
-    let config_str = std::fs::read_to_string(path.clone())?;
-    let config: LeakyConfig = serde_json::from_str(&config_str)?;
-    let new_config = LeakyConfig {
-        cid,
-        ipfs_rpc: config.ipfs_rpc,
-    };
-    let mut file = std::fs::OpenOptions::new().write(true).open(path.clone())?;
-    file.write_all(serde_json::to_string(&new_config)?.as_bytes())?;
-    Ok(())
-}
-
-pub fn save_change_log(log: &ChangeLog) -> Result<()> {
-    let path = PathBuf::from(&format!(
-        "{}/{}",
-        DEFAULT_LOCAL_LEAKY_DIR, DEFAULT_CHAGE_LOG_NAME
-    ));
-    let log = serde_json::to_string(&log)?;
-    let mut file = std::fs::OpenOptions::new().create(true).open(path)?;
-    file.write_all(serde_json::to_string(&log)?.as_bytes())?;
-    Ok(())
-}
-
-pub fn load_change_log() -> Result<ChangeLog> {
-    let path = PathBuf::from(&format!(
-        "{}/{}",
-        DEFAULT_LOCAL_LEAKY_DIR, DEFAULT_CHAGE_LOG_NAME
-    ));
-    if !path.exists() {
-        return Ok(ChangeLog::new());
+    if cid != state.cid {
+        return Err(anyhow::anyhow!("Cid in config does not match cid in state"));
     }
-    let logs = std::fs::read_to_string(path)?;
-    let logs: ChangeLog = serde_json::from_str(&logs)?;
-    Ok(logs)
+
+    let change_log_str = std::fs::read_to_string(change_log_path)?;
+    let change_log: ChangeLog = serde_json::from_str(&change_log_str)?;
+
+    Ok((leaky, change_log))
+}
+
+pub async fn save_on_disk(leaky: &mut Leaky, change_log: &ChangeLog) -> Result<()> {
+    let local_dir_path = PathBuf::from(DEFAULT_LOCAL_DIR);
+    let state_path = local_dir_path.join(PathBuf::from(DEFAULT_STATE_NAME));
+    let change_log_path = local_dir_path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
+
+    if !local_dir_path.exists() {
+        return Err(anyhow::anyhow!("No leaky directory found"));
+    }
+
+    let cid = leaky.cid()?;
+    let block_cache = leaky.block_cache()?;
+    let manifest = leaky.manifest()?;
+
+    let on_disk_state = OnDiskState {
+        cid,
+        manifest,
+        block_cache: block_cache.clone(),
+    };
+    println!("Block cache: {:?}", block_cache.clone());
+
+    std::fs::write(state_path, serde_json::to_string(&on_disk_state)?)?;
+    std::fs::write(change_log_path, serde_json::to_string(&change_log)?)?;
+
+    let after_b_c = leaky.block_cache()?;
+
+    println!("After BC: {:?}", after_b_c);
+
+    assert_eq!(block_cache, after_b_c);
+
+    Ok(())
 }
 
 pub fn fs_tree() -> Result<FsTree> {
-    let dot_dir = PathBuf::from(DEFAULT_LOCAL_LEAKY_DIR);
+    let dot_dir = PathBuf::from(DEFAULT_LOCAL_DIR);
     // Read Fs-tree at dir or pwd, stripping off the local dot directory
     let next = match fs_tree::FsTree::read_at(".")? {
         FsTree::Directory(mut d) => {
@@ -114,7 +148,7 @@ pub fn fs_tree() -> Result<FsTree> {
     Ok(next)
 }
 
-pub fn hash_file(path: &PathBuf) -> Result<blake3::Hash> {
+pub async fn hash_file(path: &PathBuf, leaky: &Leaky) -> Result<Cid> {
     if !path.exists() {
         return Err(anyhow::anyhow!("File does not exist"));
     }
@@ -122,14 +156,9 @@ pub fn hash_file(path: &PathBuf) -> Result<blake3::Hash> {
         return Err(anyhow::anyhow!("Expected a file"));
     }
 
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = blake3::Hasher::new();
-    let buffer = &mut [0; 1024];
-    while let Ok(bytes_read) = file.read(buffer) {
-        if bytes_read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..bytes_read]);
-    }
-    Ok(hasher.finalize())
+    let file = std::fs::File::open(path)?;
+
+    let cid = leaky.hash_data(file).await?;
+
+    Ok(cid)
 }

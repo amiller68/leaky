@@ -2,18 +2,21 @@ mod diff;
 //mod health;
 mod init;
 //mod pull;
-//mod push;
+mod add;
 mod change_log;
-mod stage;
+mod push;
+mod stat;
 pub mod utils;
 //mod tag;
 
+pub use add::{add, AddError};
 pub use init::{init, InitError};
-pub use stage::{stage, StageError};
+pub use stat::{stat, StatError};
+
+pub use push::{push, PushError};
 
 /*
 pub use health::{health, HealthError};
 pub use pull::{pull, PullError};
-pub use push::{push, PushError};
 pub use tag::{tag, TagError};
 */
