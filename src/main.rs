@@ -28,7 +28,7 @@ pub async fn run() -> Result<(), AppError> {
         }
         Command::Push => {
             let cid = push().await?;
-            pretty_print(format!("LeakyBucket @ {}", cid.to_string()));
+            pretty_print(format!("LeakyBucket @ {}", cid));
         }
 
         /*
@@ -52,13 +52,6 @@ pub async fn run() -> Result<(), AppError> {
         */
         _ => {}
     };
-    /*
-        if changed {
-            leaky.push().await?;
-            let cid = leaky.cid()?;
-            pretty_print(format!("LeakyBucket @ {}", cid));
-        }
-    */
     Ok(())
 }
 

@@ -16,7 +16,7 @@ use crate::types::{
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-pub struct BlockCache(HashMap<String, Ipld>);
+pub struct BlockCache(pub HashMap<String, Ipld>);
 
 impl Deref for BlockCache {
     type Target = HashMap<String, Ipld>;
@@ -113,16 +113,16 @@ impl Leaky {
 
     pub async fn load(
         &mut self,
+        cid: &Cid,
         manifest: &Manifest,
         block_cache: BlockCache,
     ) -> Result<(), LeakyError> {
         // Set the block cache
         self.block_cache = Arc::new(Mutex::new(block_cache));
         // Set the manifest
-        let manifest_cid = self.put_cache::<Manifest>(manifest).await?;
         self.manifest = Some(Arc::new(Mutex::new(manifest.clone())));
         // Set the cid
-        self.cid = Some(manifest_cid);
+        self.cid = Some(*cid);
 
         Ok(())
     }
@@ -385,6 +385,7 @@ impl Leaky {
         let cid_str = cid_string(cid);
         let ipld = block_cache.get(&cid_str).unwrap();
         let object = B::try_from(ipld.clone()).map_err(|_| LeakyError::Ipld)?;
+
         Ok(object)
     }
 
@@ -418,11 +419,6 @@ pub enum LeakyError {
     Ipld,
     #[error("cid is not set")]
     NoCid,
-
-    // DISK IO ERRORS
-    #[cfg(not(target_arch = "wasm32"))]
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
@@ -524,7 +520,7 @@ mod test {
         let cid = leaky.cid().unwrap();
         let mut leaky = Leaky::default();
         leaky.pull(&cid).await.unwrap();
-        assert_eq!(leaky.ls(PathBuf::from("")).await.unwrap().len(),);
+        assert_eq!(leaky.ls(PathBuf::from("")).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
