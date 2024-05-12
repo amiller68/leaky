@@ -5,21 +5,27 @@ use serde::{Deserialize, Serialize};
 use super::version::Version;
 use super::{Cid, Ipld};
 
-// Manifest
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+/// Manifest
+#[derive(Default, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Manifest {
+    /// Build version
     version: Version,
-    previosus: Cid,
+    /// Previous manifest CID
+    previous: Cid,
+    /// data node CID
+    data: Cid,
 }
 
 impl Into<Ipld> for Manifest {
     fn into(self) -> Ipld {
         let mut map = std::collections::BTreeMap::new();
         map.insert("version".to_string(), self.version.clone().into());
-        map.insert("previosus".to_string(), Ipld::Link(self.previous().clone()));
+        map.insert("previous".to_string(), Ipld::Link(self.previous().clone()));
+        map.insert("data".to_string(), Ipld::Link(self.data.clone()));
         Ipld::Map(map)
     }
 }
+
 impl TryFrom<Ipld> for Manifest {
     type Error = ManifestError;
     fn try_from(ipld: Ipld) -> Result<Self, ManifestError> {
@@ -29,30 +35,45 @@ impl TryFrom<Ipld> for Manifest {
                     Some(ipld) => Version::try_from(ipld.clone())?,
                     None => return Err(ManifestError::MissingField("version".to_string())),
                 };
-                let previosus = match map.get("previosus") {
-                    Some(Ipld::Link(cid)) => cid.clone(),
-                    _ => return Err(ManifestError::MissingField("previosus".to_string())),
+                let previous = match map.get("previous") {
+                    Some(Ipld::Link(cid)) => *cid,
+                    _ => return Err(ManifestError::MissingField("previous link".to_string())),
                 };
-                Ok(Manifest { version, previosus })
+                let data = match map.get("data") {
+                    Some(Ipld::Link(cid)) => *cid,
+                    _ => return Err(ManifestError::MissingField("data link".to_string())),
+                };
+
+                Ok(Manifest {
+                    version,
+                    previous,
+                    data,
+                })
             }
-            _ => Err(ManifestError::MissingField("metadata".to_string())),
+            _ => Err(ManifestError::MissingField("map".to_string())),
         }
     }
 }
 
 impl Manifest {
-    pub fn new() -> Self {
-        let version = Version::new();
-        let previosus = Cid::default();
-        Self { version, previosus }
-    }
-
     pub fn version(&self) -> &Version {
         &self.version
     }
 
     pub fn previous(&self) -> &Cid {
-        &self.previosus
+        &self.previous
+    }
+
+    pub fn data(&self) -> &Cid {
+        &self.data
+    }
+
+    pub fn set_data(&mut self, cid: Cid) {
+        self.data = cid;
+    }
+
+    pub fn set_previous(&mut self, cid: Cid) {
+        self.previous = cid;
     }
 }
 
