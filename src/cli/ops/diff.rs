@@ -5,7 +5,7 @@ use leaky::prelude::*;
 use super::change_log::{ChangeLog, ChangeType};
 use super::utils;
 
-pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
+pub async fn diff(leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
     let base: &mut ChangeLog = base;
     let mut update = base.clone();
     let next = utils::fs_tree()?;
@@ -16,33 +16,32 @@ pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, 
     base.insert(PathBuf::from(""), (default_hash, ChangeType::Base));
 
     // Iterate over the path-sorted change_log and the fs-tree in order to diff
-    let mut base_iter = base.iter();
+    // Map all paths to absolute paths within the root directory
+    let mut base_iter = base
+        .iter()
+        .map(|(path, (hash, change))| (path.clone(), (hash, change)));
     let mut next_iter = next.iter();
 
     let mut next_next = next_iter.next();
     let mut base_next = base_iter.next();
-
     loop {
-        match (next_next.clone(), base_next) {
+        match (next_next.clone(), base_next.clone()) {
             // If these are both something we got some work to do
-            (Some((_next_tree, next_path)), Some((base_path, (base_hash, base_type)))) => {
-                // Janky, but just append / to both paths
-                //  TODO: validate if this is safe with valid ./ or / paths
-                let next_path = PathBuf::from("./").join(next_path);
-                let base_path = &PathBuf::from("./").join(base_path);
-
+            (Some((next_tree, next_path)), Some((base_path, (base_hash, base_type)))) => {
+                println!("{:?} {:?}", next_path, base_path);
                 // For each object, assuming we stay aligned on a sorted list of paths:
                 // If the base comes before then this file was removed
                 // strip off the base object and log the removal
-                if base_path < &next_path {
+                if base_path < next_path {
+                    println!("base_path < next_path");
                     if !base_path.is_dir() {
+                        println!("not dir");
                         match base_type {
                             ChangeType::Added { .. } => {
-                                update.remove(base_path);
+                                update.remove(&base_path);
                             }
                             _ => {
-                                update
-                                    .insert(base_path.clone(), (default_hash, ChangeType::Removed));
+                                update.insert(base_path, (default_hash, ChangeType::Removed));
                             }
                         }
                     }
@@ -52,9 +51,11 @@ pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, 
 
                 // If next comes before base then the file was added
                 // strip off the next object and log the addition
-                if &next_path < base_path {
+                if next_path < base_path {
+                    println!("next_path < base_path");
                     if !next_path.is_dir() {
-                        let hash = utils::hash_file(&next_path, &mut leaky).await?;
+                        println!("not dir");
+                        let hash = utils::hash_file(&next_path, leaky).await?;
                         update.insert(
                             next_path.clone(),
                             (hash, ChangeType::Added { modified: true }),
@@ -65,13 +66,15 @@ pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, 
                 }
 
                 // If they are equal then we are good. Move on to the next objects
-                if &next_path == base_path {
+                if next_path == base_path {
+                    println!("equal");
                     // These are either both files or both directories
                     // If they are both files then we need to compare hashes
-                    if !next_path.is_dir() {
+                    if !next_tree.is_dir() {
+                        println!("not dir");
                         // If the hashes are different then the file was modified
                         // strip off the next object and log the modification
-                        let next_hash = utils::hash_file(&next_path, &mut leaky).await?;
+                        let next_hash = utils::hash_file(&next_path, leaky).await?;
                         if base_hash != &next_hash {
                             match base_type {
                                 // If it has been added before, then it was modified
@@ -89,18 +92,11 @@ pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, 
                                     );
                                 }
                             }
-                        } else {
-                            match base_type {
-                                // If it has been added before, then it was modified
-                                ChangeType::Added { .. } => {
-                                    update.insert(
-                                        base_path.clone(),
-                                        (next_hash, ChangeType::Added { modified: false }),
-                                    );
-                                }
-                                // Otherwise it was just modified
-                                _ => {}
-                            }
+                        } else if let ChangeType::Added { .. } = base_type {
+                            update.insert(
+                                base_path.clone(),
+                                (next_hash, ChangeType::Added { modified: false }),
+                            );
                         }
                     }
 
@@ -111,8 +107,10 @@ pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, 
             }
 
             // Theres more new files than old, so this file was added
-            (Some((_next_tree, next_path)), None) => {
-                if !next_path.is_dir() {
+            (Some((next_tree, next_path)), None) => {
+                println!("{:?} | EMPTY", next_path);
+                if !next_tree.is_dir() {
+                    println!("not dir");
                     let hash = utils::hash_file(&next_path, leaky).await?;
                     update.insert(
                         next_path.clone(),
@@ -125,13 +123,15 @@ pub async fn diff(mut leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, 
 
             // There's more old files than new, so this file was removed
             (None, Some((base_path, (_base_hash, base_type)))) => {
+                println!("EMPTY | {:?}", base_path);
                 if !base_path.is_dir() {
+                    println!("not dir");
                     match base_type {
                         ChangeType::Added { .. } => {
-                            update.remove(base_path);
+                            update.remove(&base_path);
                         }
                         _ => {
-                            update.insert(base_path.clone(), (default_hash, ChangeType::Removed));
+                            update.insert(base_path, (default_hash, ChangeType::Removed));
                         }
                     }
                 }

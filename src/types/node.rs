@@ -83,11 +83,13 @@ impl Node {
     // Remove a link from the node. Should return the CID of the link, as well as the fully
     // constructed object that was attached to the link if it exists (in the case of a file).
     pub fn del(&mut self, name: &str) -> (Cid, Option<Object>) {
+        println!("name: {:?}", name);
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
         let mut metadata_map = match metadata_ipld {
             Ipld::Map(metadata) => metadata,
             _ => panic!("not a map"),
         };
+        println!("metadata_map: {:?}", metadata_map);
         let link = self.0.remove(name).unwrap();
         let object = metadata_map.remove(name).unwrap();
         self.0

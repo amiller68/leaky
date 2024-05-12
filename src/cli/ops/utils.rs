@@ -227,20 +227,20 @@ pub async fn save_on_disk(leaky: &mut Leaky, change_log: &ChangeLog) -> Result<(
 
 pub fn fs_tree() -> Result<FsTree> {
     let dot_dir = PathBuf::from(DEFAULT_LOCAL_DIR);
+
+    // Read the Fs-tree at the local directory, ignoring the local directory
     // Read Fs-tree at dir or pwd, stripping off the local dot directory
-    let next = match fs_tree::FsTree::read_at(".")? {
+    match fs_tree::FsTree::read_at(".")? {
         FsTree::Directory(mut d) => {
             let _res = &d.remove_entry(&dot_dir);
-            fs_tree::FsTree::Directory(d)
+            Ok(fs_tree::FsTree::Directory(d))
         }
-        _ => {
-            return Err(anyhow::anyhow!("Expected a directory"));
-        }
-    };
-    Ok(next)
+        _ => Err(anyhow::anyhow!("Expected a directory")),
+    }
 }
 
 pub async fn hash_file(path: &PathBuf, leaky: &Leaky) -> Result<Cid> {
+    println!("Hashing file: {:?}", path);
     if !path.exists() {
         return Err(anyhow::anyhow!("File does not exist"));
     }
@@ -251,6 +251,8 @@ pub async fn hash_file(path: &PathBuf, leaky: &Leaky) -> Result<Cid> {
     let file = std::fs::File::open(path)?;
 
     let cid = leaky.hash_data(file).await?;
+
+    println!("Hashed file: {:?}", cid);
 
     Ok(cid)
 }

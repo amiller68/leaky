@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use url::Url;
+
 mod cli;
 
 use cli::ops::{add, init, push, stat, AddError, InitError, PushError, StatError};
@@ -14,7 +16,11 @@ async fn main() {
 pub async fn run() -> Result<(), AppError> {
     let args = Cli::parse();
     match args.command {
-        Command::Init { ipfs_rpc } => {
+        Command::Init { maybe_ipfs_rpc_url } => {
+            let ipfs_rpc = match maybe_ipfs_rpc_url {
+                Some(url) => url,
+                None => Url::parse("http://localhost:5001").unwrap(),
+            };
             let cid = init(ipfs_rpc).await?;
             pretty_print(format!("LeakyBucket @ {}", cid));
         }

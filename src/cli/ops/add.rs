@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::PathBuf;
 
 use leaky::prelude::*;
 
@@ -7,31 +8,41 @@ use super::diff::{diff, DiffError};
 use super::change_log::ChangeType;
 use super::utils;
 
+fn abs_path(path: &PathBuf) -> Result<PathBuf, DiffError> {
+    let path = PathBuf::from("/").join(path);
+    Ok(path)
+}
+
 pub async fn add() -> Result<Cid, AddError> {
     let (mut leaky, mut change_log) = utils::load_on_disk().await?;
 
     // Diff against the cwd
     let updates = diff(&leaky, &mut change_log).await?;
 
+    println!("Updates: {:?}", updates);
+
     let root_cid = leaky.cid()?;
 
-    let change_log_iter = updates.iter();
+    let change_log_iter = updates.iter().map(|(path, (hash, change))| {
+        let abs_path = abs_path(path).unwrap();
+        (path.clone(), abs_path, (hash, change))
+    });
     // Iterate over the ChangeLog -- play updates against the base ... probably better to do this
-    for (path, (_hash, diff_type)) in change_log_iter {
+    for (path, abs_path, (_hash, diff_type)) in change_log_iter {
         match diff_type {
             ChangeType::Added { modified: true } => {
+                println!("Added: {:?}", path);
                 let file = File::open(&path)?;
-                leaky.add(path, file, None, true).await?;
+                leaky.add(&abs_path, file, None, true).await?;
             }
 
             ChangeType::Modified => {
                 let file = File::open(&path)?;
-                leaky.add(path, file, None, true).await?;
+                leaky.add(&abs_path, file, None, true).await?;
             }
 
             ChangeType::Removed => {
-                println!("we don't support removing files yet: {}", path.display());
-                todo!();
+                leaky.rm(&abs_path).await?;
             }
 
             _ => {

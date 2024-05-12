@@ -12,8 +12,8 @@ pub struct Manifest {
     version: Version,
     /// Previous manifest CID
     previous: Cid,
-    /// Root node CID
-    root: Cid,
+    /// data node CID
+    data: Cid,
 }
 
 impl Into<Ipld> for Manifest {
@@ -21,7 +21,7 @@ impl Into<Ipld> for Manifest {
         let mut map = std::collections::BTreeMap::new();
         map.insert("version".to_string(), self.version.clone().into());
         map.insert("previous".to_string(), Ipld::Link(self.previous().clone()));
-        map.insert("root".to_string(), Ipld::Link(self.root.clone()));
+        map.insert("data".to_string(), Ipld::Link(self.data.clone()));
         Ipld::Map(map)
     }
 }
@@ -39,15 +39,15 @@ impl TryFrom<Ipld> for Manifest {
                     Some(Ipld::Link(cid)) => *cid,
                     _ => return Err(ManifestError::MissingField("previous link".to_string())),
                 };
-                let root = match map.get("root") {
+                let data = match map.get("data") {
                     Some(Ipld::Link(cid)) => *cid,
-                    _ => return Err(ManifestError::MissingField("root link".to_string())),
+                    _ => return Err(ManifestError::MissingField("data link".to_string())),
                 };
 
                 Ok(Manifest {
                     version,
                     previous,
-                    root,
+                    data,
                 })
             }
             _ => Err(ManifestError::MissingField("map".to_string())),
@@ -64,12 +64,12 @@ impl Manifest {
         &self.previous
     }
 
-    pub fn root(&self) -> &Cid {
-        &self.root
+    pub fn data(&self) -> &Cid {
+        &self.data
     }
 
-    pub fn set_root(&mut self, cid: Cid) {
-        self.root = cid;
+    pub fn set_data(&mut self, cid: Cid) {
+        self.data = cid;
     }
 
     pub fn set_previous(&mut self, cid: Cid) {

@@ -15,8 +15,8 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     Init {
-        #[clap(long, short)]
-        ipfs_rpc: Url,
+        #[clap(long = "ipfs-rpc", short = 'i')]
+        maybe_ipfs_rpc_url: Option<Url>,
     },
     Add,
     Stat,
