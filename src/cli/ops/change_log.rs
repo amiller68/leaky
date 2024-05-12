@@ -18,9 +18,15 @@ pub enum StagedType {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ChangeType {
+    // Covers the base state of the files (unchanged since the last call to `push`)
     Base,
+    // Covers completely new files and whether they've been modified
+    //  Since the last call to `add`
     Added { modified: bool },
+    // Covers files that have been modified since the last call to `push`
+    //  that still exist, but have been modified
     Modified,
+    // Covers files that have been removed since the last call to `push`
     Removed,
 }
 

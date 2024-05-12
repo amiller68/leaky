@@ -240,7 +240,6 @@ pub fn fs_tree() -> Result<FsTree> {
 }
 
 pub async fn hash_file(path: &PathBuf, leaky: &Leaky) -> Result<Cid> {
-    println!("Hashing file: {:?}", path);
     if !path.exists() {
         return Err(anyhow::anyhow!("File does not exist"));
     }
@@ -251,8 +250,6 @@ pub async fn hash_file(path: &PathBuf, leaky: &Leaky) -> Result<Cid> {
     let file = std::fs::File::open(path)?;
 
     let cid = leaky.hash_data(file).await?;
-
-    println!("Hashed file: {:?}", cid);
 
     Ok(cid)
 }

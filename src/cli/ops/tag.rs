@@ -1,91 +1,93 @@
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
+use anyhow::anyhow;
+use leaky::prelude::*;
 use serde_json::Value;
 
-use crate::cli::device::DeviceError;
-use crate::types::{Audio, Schema, SchemaError, Visual, Writing};
+use super::change_log::ChangeType;
+use super::utils;
 
-use crate::cli::config::{Config, ConfigError};
-
-// TODO: this whole tagging system is dissapointing. Look at all that bloat!
-//  I either need to rethink this, or learn more about macros
-
-fn input_tag<S>(path: &Path, value: &str) -> Result<Value, TagError>
-where
-    S: Schema,
-{
-    let path = path.to_path_buf();
-    let extension = match path.extension() {
-        Some(ext) => ext,
-        None => return Err(TagError::NoExtension),
-    };
-    let extension_str = match extension.to_str() {
-        Some(ext) => ext,
-        None => return Err(TagError::NoExtension),
-    };
-    if !S::valid_extensions().contains(&extension_str) {
-        return Err(TagError::UnsupportedFileType);
-    }
-    let value: Value = serde_json::from_str(value)?;
-    let fields = S::fields();
-    for (field, description) in fields {
-        println!("{} | {}", field, description);
-    }
-
-    let schema = S::try_from(value.clone()).map_err(|_| TagError::Conversion)?;
-    // Write the object as a schematized value
-    Ok(schema.into_schema_value())
+fn clean_path(path: &PathBuf) -> PathBuf {
+    // Strip the / prefix
+    path.strip_prefix("/").unwrap().to_path_buf()
 }
 
-pub async fn tag(config: &Config, name: &str, path: &PathBuf, value: &str) -> Result<(), TagError> {
-    // load the manifest schema
-    let device = config.device()?;
-    let mut change_log = config.change_log()?;
-    let (_cid, base_manifest) = change_log.last_version().unwrap();
-    let mut manifest = base_manifest.clone();
-    let object = match manifest.get_object_mut(path) {
-        Some(o) => o,
-        None => return Err(TagError::ObjectDoesNotExist(path.clone())),
-    };
-
-    let value = match name {
-        "writing" => input_tag::<Writing>(path, value),
-        "audio" => input_tag::<Audio>(path, value),
-        "visual" => input_tag::<Visual>(path, value),
-        val => return Err(TagError::SchemaDoesNotExist(val.to_string())),
-    }?;
-
-    object.set_metdata(value);
-
-    if base_manifest != &manifest {
-        let cid = device.hash_manifest(&manifest, false).await?;
-        let wtf_log = change_log.clone();
-        let log = wtf_log.log();
-        change_log.update(log, &manifest, &cid);
-
-        config.set_change_log(change_log)?;
+fn value_to_metadata(value: String) -> Result<BTreeMap<String, Ipld>, TagError> {
+    let mut metadata = BTreeMap::new();
+    let value: Value = serde_json::from_str(&value)?;
+    for (key, value) in value.as_object().unwrap() {
+        let ipld = match value {
+            Value::String(s) => Ipld::String(s.clone()),
+            Value::Number(n) => {
+                if n.is_i64() {
+                    // Read as i128
+                    let i = n.as_i64().unwrap();
+                    Ipld::Integer(i as i128)
+                } else {
+                    Ipld::Float(n.as_f64().unwrap())
+                }
+            }
+            Value::Bool(b) => Ipld::Bool(*b),
+            Value::Null => Ipld::Null,
+            _ => return Err(TagError::Default(anyhow!("unsupported type: {:?}", value))),
+        };
+        metadata.insert(key.clone(), ipld);
     }
-    Ok(())
+    Ok(metadata)
+}
+
+pub async fn tag(path: PathBuf, value: String) -> Result<Cid, TagError> {
+    let (mut leaky, change_log) = utils::load_on_disk().await?;
+    let mut updates = change_log.clone();
+
+    let root_cid = leaky.cid()?;
+    let metadata = value_to_metadata(value)?;
+    leaky.tag(&path, &metadata).await?;
+    let new_root_cid = leaky.cid()?;
+
+    if new_root_cid == root_cid {
+        println!("No changes to tag");
+        return Ok(root_cid);
+    }
+
+    // Get the path stripped of the / prefix
+    let path = clean_path(&path);
+    for (c_path, (cid, change)) in change_log.iter() {
+        if path == *c_path {
+            match change {
+                ChangeType::Added { .. } => {
+                    updates.insert(c_path.clone(), (*cid, ChangeType::Added { modified: true }));
+                }
+                ChangeType::Base => {
+                    updates.insert(c_path.clone(), (*cid, ChangeType::Modified));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    utils::save_on_disk(&mut leaky, &updates).await?;
+
+    Ok(new_root_cid)
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum TagError {
-    #[error("config error: {0}")]
-    Config(#[from] ConfigError),
-    #[error("schema does not exist: {0}")]
-    SchemaDoesNotExist(String),
-    #[error("serde error: {0}")]
+    #[error("default error: {0}")]
+    Default(#[from] anyhow::Error),
+    #[error("cid error: {0}")]
+    Cid(#[from] libipld::cid::Error),
+    #[error("encountered mismatched cid: {0} != {1}")]
+    CidMismatch(Cid, Cid),
+    #[error("fs-tree error: {0}")]
+    FsTree(#[from] fs_tree::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("could not parse diff: {0}")]
     Serde(#[from] serde_json::Error),
-    #[error("error encoding schema")]
-    Schema(#[from] SchemaError),
+    #[error("could not strip prefix: {0}")]
+    PathPrefix(#[from] std::path::StripPrefixError),
     #[error("device error: {0}")]
-    Device(#[from] DeviceError),
-    #[error("unsupported file type")]
-    UnsupportedFileType,
-    #[error("object does not exist: {0}")]
-    ObjectDoesNotExist(PathBuf),
-    #[error("conversion from value")]
-    Conversion,
-    #[error("file does not have an extension")]
-    NoExtension,
+    Leaky(#[from] LeakyError),
 }

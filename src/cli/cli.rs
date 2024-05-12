@@ -19,13 +19,16 @@ pub enum Command {
         maybe_ipfs_rpc_url: Option<Url>,
     },
     Add,
+    Tag {
+        #[clap(long, short)]
+        path: PathBuf,
+        #[clap(long, short)]
+        metadata: String,
+    },
     Stat,
     Push,
     Ls {
         #[clap(long, short)]
-        path: PathBuf,
-    },
-    Cat {
         path: PathBuf,
     },
 }

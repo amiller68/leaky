@@ -4,7 +4,7 @@ use url::Url;
 
 mod cli;
 
-use cli::ops::{add, init, push, stat, AddError, InitError, PushError, StatError};
+use cli::ops::{add, init, push, stat, tag, AddError, InitError, PushError, StatError, TagError};
 use cli::{Cli, Command, Parser};
 
 #[tokio::main]
@@ -26,6 +26,10 @@ pub async fn run() -> Result<(), AppError> {
         }
         Command::Add => {
             let cid = add().await?;
+            pretty_print(format!("LeakyBucket @ {}", cid));
+        }
+        Command::Tag { path, metadata } => {
+            let cid = tag(path, metadata).await?;
             pretty_print(format!("LeakyBucket @ {}", cid));
         }
         Command::Stat => {
@@ -73,6 +77,8 @@ pub enum AppError {
     Stat(#[from] StatError),
     #[error("Push error: {0}")]
     Push(#[from] PushError),
+    #[error("Tag error: {0}")]
+    Tag(#[from] TagError),
 }
 
 fn capture_error<T>(result: Result<T, AppError>) {

@@ -49,18 +49,11 @@ impl Node {
     // Write a link to the node. Use this for creating 'directories'
     pub fn put_link(&mut self, name: &str, link: &Cid) {
         assert_ne!(name, METADATA_KEY);
-        self.0.insert(name.to_string(), Ipld::Link(link.clone()));
+        self.0.insert(name.to_string(), Ipld::Link(*link));
     }
 
-    // Write a link to the node as an object. Use this for creating 'files'
-    pub fn put_object_link(
-        &mut self,
-        name: &str,
-        link: &Cid,
-        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-    ) {
+    pub fn put_object(&mut self, name: &str, maybe_metadata: Option<&BTreeMap<String, Ipld>>) {
         assert_ne!(name, METADATA_KEY);
-        // Determine if we already have a metadata object for this link
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
         let mut metadata_map = match metadata_ipld {
             Ipld::Map(metadata) => metadata,
@@ -77,29 +70,46 @@ impl Node {
         metadata_map.insert(name.to_string(), object.into());
         self.0
             .insert(METADATA_KEY.to_string(), Ipld::Map(metadata_map.clone()));
-        self.0.insert(name.to_string(), Ipld::Link(link.clone()));
+    }
+
+    // Write a link to the node as an object. Use this for creating 'files'
+    pub fn update_link(
+        &mut self,
+        name: &str,
+        maybe_link: Option<&Cid>,
+        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
+    ) {
+        assert_ne!(name, METADATA_KEY);
+
+        if let Some(link) = maybe_link {
+            self.put_link(name, link);
+        }
+        self.put_object(name, maybe_metadata);
     }
 
     // Remove a link from the node. Should return the CID of the link, as well as the fully
     // constructed object that was attached to the link if it exists (in the case of a file).
-    pub fn del(&mut self, name: &str) -> (Cid, Option<Object>) {
-        println!("name: {:?}", name);
+    pub fn del(&mut self, name: &str) -> (Option<Cid>, Option<Object>) {
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
         let mut metadata_map = match metadata_ipld {
             Ipld::Map(metadata) => metadata,
             _ => panic!("not a map"),
         };
-        println!("metadata_map: {:?}", metadata_map);
-        let link = self.0.remove(name).unwrap();
-        let object = metadata_map.remove(name).unwrap();
+        // Match on whether the link is present in the node
+        let link = match self.0.remove(name) {
+            Some(Ipld::Link(cid)) => Ipld::Link(cid),
+            None => return (Some(Cid::default()), None),
+            _ => panic!("not a link"),
+        };
+        let object = metadata_map.remove(name);
         self.0
             .insert(METADATA_KEY.to_string(), Ipld::Map(metadata_map.clone()));
         match (link, object) {
-            (Ipld::Link(cid), Ipld::Map(metadata)) => {
+            (Ipld::Link(cid), Some(Ipld::Map(metadata))) => {
                 let object = Object::try_from(Ipld::Map(metadata)).unwrap();
-                (cid, Some(object))
+                (Some(cid), Some(object))
             }
-            (Ipld::Link(cid), _) => (cid, None),
+            (Ipld::Link(cid), None) => (Some(cid), None),
             _ => panic!("not a link and metadata"),
         }
     }
@@ -108,7 +118,7 @@ impl Node {
     pub fn get_link(&self, name: &str) -> Option<Cid> {
         assert_ne!(name, METADATA_KEY);
         self.0.get(name).and_then(|ipld| match ipld {
-            Ipld::Link(cid) => Some(cid.clone()),
+            Ipld::Link(cid) => Some(*cid),
             _ => None,
         })
     }
@@ -120,27 +130,31 @@ impl Node {
                 continue;
             }
             if let Ipld::Link(cid) = v {
-                m.insert(k.clone(), cid.clone());
+                m.insert(k.clone(), *cid);
             }
         }
         m
     }
 
+    pub fn size(&self) -> usize {
+        // Get the length of the node, minus the metadata key
+        self.0.len() - 1
+    }
+
     // Get the fully constructed object from the node, if it exists
-    pub fn get_object_metadata(&self, name: &str) -> Option<Object> {
+    pub fn get_object(&self, name: &str) -> Option<Object> {
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap();
         let metadata_map = match metadata_ipld {
             Ipld::Map(metadata) => metadata,
             _ => panic!("not a map"),
         };
-        metadata_map.get(name).map(|object_ipld| {
-            let object = Object::try_from(object_ipld.clone()).unwrap();
-            object
-        })
+        metadata_map
+            .get(name)
+            .map(|object_ipld| Object::try_from(object_ipld.clone()).unwrap())
     }
 
     // Get all the metadata objects from the node
-    pub fn get_object_metadatas(&self) -> BTreeMap<String, Object> {
+    pub fn get_objects(&self) -> BTreeMap<String, Object> {
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap();
         let metadata_map = match metadata_ipld {
             Ipld::Map(metadata) => metadata,

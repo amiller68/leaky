@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::Read;
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -12,7 +12,7 @@ use url::Url;
 
 use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
 use crate::types::{
-    Block, Cid, DagCborCodec, DefaultParams, Ipld, IpldCodec, Manifest, MhCode, Node,
+    Block, Cid, DagCborCodec, DefaultParams, Ipld, IpldCodec, Manifest, MhCode, Node, Object,
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -155,6 +155,7 @@ impl Leaky {
         Ok(())
     }
 
+    // TODO: pushing should not affect the local state
     pub async fn push(&mut self) -> Result<(), LeakyError> {
         // Iterate over the block cache and push all the blocks to ipfs_rpc
         for (cid_str, object) in self.block_cache.lock().unwrap().iter() {
@@ -200,32 +201,75 @@ impl Leaky {
             data_cid = self.hash_data(data).await?;
         } else {
             data_cid = self.add_data(data).await?;
-        }
+        };
         let mut manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let data_node_cid = manifest.data();
-        let new_data_node_cid = self
-            .upsert_link_and_object(&data_node_cid, &path, Some(&data_cid), maybe_metadata)
+        let maybe_new_data_node_cid = self
+            .upsert_link_and_object(data_node_cid, &path, Some(&data_cid), maybe_metadata)
             .await?;
+        let new_data_node_cid = match maybe_new_data_node_cid {
+            Some(cid) => cid,
+            // No Change
+            None => return Ok(data_cid),
+        };
         manifest.set_data(new_data_node_cid);
         let manifest_cid = self.put::<Manifest>(&manifest).await?;
         self.cid = Some(manifest_cid);
         Ok(data_cid)
     }
 
-    pub async fn rm(&mut self, path: &PathBuf) -> Result<(), LeakyError> {
+    pub async fn tag(
+        &mut self,
+        path: &PathBuf,
+        metadata: &BTreeMap<String, Ipld>,
+    ) -> Result<(), LeakyError> {
         let path = clean_path(path);
         let mut manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let data_node_cid = manifest.data();
-        let new_data_node_cid = self
-            .upsert_link_and_object(&data_node_cid, &path, None, None)
+        let maybe_new_data_node_cid = self
+            .upsert_link_and_object(data_node_cid, &path, None, Some(metadata))
             .await?;
+        let new_data_node_cid = match maybe_new_data_node_cid {
+            Some(cid) => cid,
+            // No Change
+            None => return Ok(()),
+        };
         manifest.set_data(new_data_node_cid);
         let manifest_cid = self.put::<Manifest>(&manifest).await?;
         self.cid = Some(manifest_cid);
         Ok(())
     }
 
-    pub async fn ls(&self, path: PathBuf) -> Result<BTreeMap<String, Cid>, LeakyError> {
+    pub async fn rm(&mut self, path: &PathBuf) -> Result<(), LeakyError> {
+        let path = clean_path(path);
+        let mut manifest = self.manifest.as_ref().unwrap().lock().unwrap();
+        let data_node_cid = manifest.data();
+        let maybe_new_data_node_cid = self
+            .upsert_link_and_object(data_node_cid, &path, None, None)
+            .await?;
+        let new_data_node_cid = match maybe_new_data_node_cid {
+            Some(cid) => {
+                // The root node was deleted
+                if cid == Cid::default() {
+                    let data_node = Node::default();
+                    self.put_cache::<Node>(&data_node).await?
+                } else {
+                    cid
+                }
+            }
+            // No Change
+            None => return Ok(()),
+        };
+        manifest.set_data(new_data_node_cid);
+        let manifest_cid = self.put::<Manifest>(&manifest).await?;
+        self.cid = Some(manifest_cid);
+        Ok(())
+    }
+
+    pub async fn ls(
+        &self,
+        path: PathBuf,
+    ) -> Result<Vec<(String, (Cid, Option<Object>))>, LeakyError> {
         let path = clean_path(&path);
         let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let data_node_cid = manifest.data();
@@ -236,11 +280,24 @@ impl Leaky {
         for part in path.iter() {
             let next = part.to_string_lossy().to_string();
             let next_cid = node.get_link(&next).unwrap();
-            node = self.get_cache::<Node>(&next_cid).await?;
+            node = match self.get_cache::<Node>(&next_cid).await {
+                Ok(node) => node,
+                Err(_) => {
+                    return Err(LeakyError::PathNotDir(path));
+                }
+            }
         }
 
         // Get the links from the node
-        let links = node.get_links();
+        let links: Vec<_> = node
+            .get_links()
+            .iter()
+            .map(|(name, link)| {
+                let object = node.get_object(name);
+                (name.clone(), (*link, object))
+            })
+            .collect();
+
         Ok(links)
     }
 
@@ -248,7 +305,7 @@ impl Leaky {
         let path = clean_path(&path);
         let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         let data_node_cid = manifest.data();
-        let node = self.get_cache::<Node>(&data_node_cid).await?;
+        let node = self.get_cache::<Node>(data_node_cid).await?;
         let mut node = node;
         // Get the dir path
         let dir_path = path
@@ -298,14 +355,16 @@ impl Leaky {
         Ok(())
     }
 
+    // TODO: this doesn't percolate deleted directories back up
     #[async_recursion::async_recursion]
     async fn upsert_link_and_object(
         &self,
         cid: &Cid,
-        path: &PathBuf,
+        path: &Path,
         maybe_link: Option<&Cid>,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-    ) -> Result<Cid, LeakyError> {
+    ) -> Result<Option<Cid>, LeakyError> {
+        let is_rm = maybe_link.is_none() && maybe_metadata.is_none();
         // Get the node we're going to update
         let mut node = self.get_cache::<Node>(cid).await?;
         let next = path.iter().next().unwrap().to_string_lossy().to_string();
@@ -319,19 +378,26 @@ impl Leaky {
         match path.iter().count() {
             // Base case, just insert the link and object
             1 => {
-                // Determine if we're inserting, updating, or deleting
-                match maybe_link {
-                    // Ok so we have a link, so we are either adding or updating
-                    Some(link) => {
-                        node.put_object_link(&next, link, maybe_metadata);
+                // Delete the link
+                if is_rm {
+                    let (maybe_link, _maybe_obj) = node.del(&next);
+
+                    // There is no link to delete
+                    if maybe_link.is_none() {
+                        return Ok(None);
                     }
-                    // Delete the link and object
-                    None => {
-                        node.del(&next);
+
+                    // Otherwise if there are no more links, delete the node
+                    if node.size() == 0 {
+                        return Ok(Some(Cid::default()));
                     }
+                } else {
+                    node.update_link(&next, maybe_link, maybe_metadata);
                 }
+
+                // The node is updated, put it back into the cache and return the new cid
                 let cid = self.put_cache::<Node>(&node).await?;
-                Ok(cid)
+                Ok(Some(cid))
             }
             // We gave more to recurse on
             _ => {
@@ -340,21 +406,35 @@ impl Leaky {
                 // Determine if the next part of the path exists within the tree
                 let next_cid = if let Some(next_cid) = node.get_link(&next) {
                     next_cid
-                } else {
+                } else if !is_rm {
                     // Ok create a new node to hold this part of the path
                     let new_node = Node::default();
                     self.put_cache::<Node>(&new_node).await?
+                } else {
+                    println!("nwp");
+                    return Ok(None);
                 };
+                println!("next_cid: {}", next_cid);
                 // Upsert the remaining path components into the node
-                let cid = &self
+                let maybe_cid = &self
                     .upsert_link_and_object(&next_cid, &remaining, maybe_link, maybe_metadata)
                     .await?;
-                // Insert the updated link
-                node.put_link(&next, cid);
-                // Put the updated node
+                let cid = match maybe_cid {
+                    Some(cid) => cid,
+                    // No change, return the original cid
+                    None => return Ok(None),
+                };
+
+                if *cid == Cid::default() {
+                    node.del(&next);
+                    if node.size() == 0 {
+                        return Ok(Some(Cid::default()));
+                    }
+                } else {
+                    node.put_link(&next, cid);
+                }
                 let cid = self.put_cache::<Node>(&node).await?;
-                // Okie doke!
-                Ok(cid)
+                Ok(Some(cid))
             }
         }
     }
@@ -450,6 +530,10 @@ pub enum LeakyError {
     Ipld,
     #[error("cid is not set")]
     NoCid,
+    #[error("path is not directory: {0}")]
+    PathNotDir(PathBuf),
+    #[error("path is not file: {0}")]
+    PathNotFile(PathBuf),
 }
 
 #[cfg(test)]
@@ -535,6 +619,19 @@ mod test {
             .add(&PathBuf::from("/foo/bar/buzz"), data, None, true)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn add_rm() {
+        let cid = empty_leaky_cid().await;
+        let mut leaky = Leaky::default();
+        leaky.pull(&cid).await.unwrap();
+        let data = "foo".as_bytes();
+        leaky
+            .add(&PathBuf::from("/foo/bar"), data, None, true)
+            .await
+            .unwrap();
+        leaky.rm(&PathBuf::from("/foo/bar")).await.unwrap();
     }
 
     #[tokio::test]

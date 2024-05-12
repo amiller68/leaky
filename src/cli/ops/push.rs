@@ -31,10 +31,12 @@ pub async fn push() -> Result<Cid, PushError> {
                 updates.insert(path.clone(), (*hash, ChangeType::Base));
             }
 
-            _ => {
-                // Skip unchanged files
-                continue;
+            ChangeType::Removed => {
+                changed = true;
+                updates.insert(path.clone(), (*hash, ChangeType::Base));
             }
+
+            _ => {}
         }
     }
 

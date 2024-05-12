@@ -19,8 +19,6 @@ pub async fn add() -> Result<Cid, AddError> {
     // Diff against the cwd
     let updates = diff(&leaky, &mut change_log).await?;
 
-    println!("Updates: {:?}", updates);
-
     let root_cid = leaky.cid()?;
 
     let change_log_iter = updates.iter().map(|(path, (hash, change))| {
@@ -31,7 +29,6 @@ pub async fn add() -> Result<Cid, AddError> {
     for (path, abs_path, (_hash, diff_type)) in change_log_iter {
         match diff_type {
             ChangeType::Added { modified: true } => {
-                println!("Added: {:?}", path);
                 let file = File::open(&path)?;
                 leaky.add(&abs_path, file, None, true).await?;
             }
