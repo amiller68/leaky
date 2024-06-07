@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 
 use fs_tree::FsTree;
 use serde::{Deserialize, Serialize};

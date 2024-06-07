@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 
 use serde::{Deserialize, Serialize};
 

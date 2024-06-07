@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::anyhow;
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 use serde_json::Value;
 
 use super::change_log::ChangeType;

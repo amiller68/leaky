@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 
 use super::change_log::{ChangeLog, ChangeType};
 use super::utils;

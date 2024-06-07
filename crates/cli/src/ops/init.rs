@@ -1,6 +1,6 @@
 use url::Url;
 
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 
 use super::utils;
 

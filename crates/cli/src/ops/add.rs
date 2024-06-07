@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::path::PathBuf;
 
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 
 use super::diff::{diff, DiffError};
 

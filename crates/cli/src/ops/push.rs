@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use leaky::prelude::*;
+use leaky_common::prelude::*;
 
 use super::change_log::ChangeType;
 use super::utils;

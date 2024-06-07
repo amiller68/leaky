@@ -3,9 +3,10 @@ use std::fmt::Display;
 use url::Url;
 
 mod cli;
+mod ops;
 
-use cli::ops::{add, init, push, stat, tag, AddError, InitError, PushError, StatError, TagError};
 use cli::{Cli, Command, Parser};
+use ops::{add, init, push, stat, tag, AddError, InitError, PushError, StatError, TagError};
 
 #[tokio::main]
 async fn main() {
