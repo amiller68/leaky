@@ -29,7 +29,6 @@ pub enum Command {
     },
     Stat,
     Push,
-    Pull,
     Ls {
         #[clap(long, short)]
         path: PathBuf,

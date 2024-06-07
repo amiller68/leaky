@@ -228,6 +228,7 @@ pub enum IpfsRpcError {
     Cid(#[from] wnfs::common::libipld::cid::Error),
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

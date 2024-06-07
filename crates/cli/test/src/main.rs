@@ -6,10 +6,7 @@ mod cli;
 mod ops;
 
 use cli::{Cli, Command, Parser};
-use ops::{
-    add, init, pull, push, stat, tag, AddError, InitError, PullError, PushError, StatError,
-    TagError,
-};
+use ops::{add, init, push, stat, tag, AddError, InitError, PushError, StatError, TagError};
 
 #[tokio::main]
 async fn main() {
@@ -51,10 +48,6 @@ pub async fn run() -> Result<(), AppError> {
             let cid = push().await?;
             pretty_print(format!("LeakyBucket @ {}", cid));
         }
-        Command::Pull => {
-            let cid = pull().await?;
-            pretty_print(format!("LeakyBucket @ {}", cid));
-        }
 
         /*
                 Command::Add { root, path } => {
@@ -92,8 +85,6 @@ pub enum AppError {
     Stat(#[from] StatError),
     #[error("Push error: {0}")]
     Push(#[from] PushError),
-    #[error("Pull error: {0}")]
-    Pull(#[from] PullError),
     #[error("Tag error: {0}")]
     Tag(#[from] TagError),
 }

@@ -2,6 +2,7 @@
 #[allow(dead_code)]
 mod ipfs_rpc;
 mod leaky;
+mod leaky_api;
 mod types;
 
 pub mod prelude {

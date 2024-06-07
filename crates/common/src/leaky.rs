@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
+use crate::leaky_api::{LeakyApi, LeakyApiError};
 use crate::types::{
     Block, Cid, DagCborCodec, DefaultParams, Ipld, IpldCodec, Manifest, MhCode, Node, Object,
 };
@@ -52,6 +53,7 @@ pub fn clean_path(path: &PathBuf) -> PathBuf {
 #[derive(Clone)]
 pub struct Leaky {
     ipfs_rpc: IpfsRpc,
+    leaky_api: LeakyApi,
 
     cid: Option<Cid>,
     manifest: Option<Arc<Mutex<Manifest>>>,
@@ -69,15 +71,18 @@ struct LeakyDisk {
 impl Default for Leaky {
     fn default() -> Self {
         let ipfs_rpc_url = Url::parse("http://localhost:5001").unwrap();
-        Self::new(ipfs_rpc_url).unwrap()
+        let leaky_api_url = Url::parse("http://localhost:3000").unwrap();
+        Self::new(ipfs_rpc_url, leaky_api_url).unwrap()
     }
 }
 
 impl Leaky {
-    pub fn new(ipfs_rpc_url: Url) -> Result<Self, LeakyError> {
+    pub fn new(ipfs_rpc_url: Url, leaky_api_url: Url) -> Result<Self, LeakyError> {
         let ipfs_rpc = IpfsRpc::try_from(ipfs_rpc_url)?;
+        let leaky_api = LeakyApi::try_from(leaky_api_url)?;
         Ok(Self {
             ipfs_rpc,
+            leaky_api,
             cid: None,
             manifest: None,
             block_cache: Arc::new(Mutex::new(BlockCache::default())),
@@ -141,6 +146,11 @@ impl Leaky {
         Ok(())
     }
 
+    pub async fn pull_root_cid(&mut self) -> Result<Cid, LeakyError> {
+        let cid = self.leaky_api.pull_root().await?;
+        Ok(cid)
+    }
+
     pub async fn pull(&mut self, cid: &Cid) -> Result<(), LeakyError> {
         // Try to pull the manifest from our ipfs_rpc
         let manifest = self.get::<Manifest>(cid).await?;
@@ -169,6 +179,9 @@ impl Leaky {
         let mut manifest = self.manifest.as_ref().unwrap().lock().unwrap();
         manifest.set_previous(previous_cid);
         let cid = self.put::<Manifest>(&manifest).await?;
+
+        // Push the cid to the leaky_api
+        self.leaky_api.push_root(&cid, &previous_cid).await?;
 
         // Uhh that should be it
         self.cid = Some(cid);
@@ -268,13 +281,15 @@ impl Leaky {
 
     pub async fn ls(
         &self,
-        path: PathBuf,
+        path: &PathBuf,
     ) -> Result<Vec<(String, (Cid, Option<Object>))>, LeakyError> {
-        let path = clean_path(&path);
-        let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
-        let data_node_cid = manifest.data();
-        let node = self.get_cache::<Node>(&data_node_cid).await?;
-        let mut node = node;
+        let path = clean_path(path);
+        let data_node_cid = {
+            let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
+            let mc = manifest.clone();
+            *mc.data()
+        };
+        let mut node = self.get_cache::<Node>(&data_node_cid).await?;
 
         // Iterate on the remaining path
         for part in path.iter() {
@@ -301,11 +316,22 @@ impl Leaky {
         Ok(links)
     }
 
-    pub async fn cat(&self, path: PathBuf) -> Result<Vec<u8>, LeakyError> {
-        let path = clean_path(&path);
-        let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
-        let data_node_cid = manifest.data();
-        let node = self.get_cache::<Node>(data_node_cid).await?;
+    /// Return all the items in the bucket in order by path name
+    pub async fn items(&self) -> Result<Vec<(PathBuf, Cid)>, LeakyError> {
+        let root_items = self.recursive_items(&PathBuf::from("/")).await?;
+        let mut sorted_items = root_items;
+        sorted_items.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(sorted_items)
+    }
+
+    pub async fn cat(&self, path: &PathBuf) -> Result<Vec<u8>, LeakyError> {
+        let path = clean_path(path);
+        let data_node_cid = {
+            let manifest = self.manifest.as_ref().unwrap().lock().unwrap();
+            let mc = manifest.clone();
+            *mc.data()
+        };
+        let node = self.get_cache::<Node>(&data_node_cid).await?;
         let mut node = node;
         // Get the dir path
         let dir_path = path
@@ -330,6 +356,36 @@ impl Leaky {
     }
 
     /* Helper functions */
+
+    /// Recursively bubble up all the items from a path
+    ///  in sorted order
+    #[async_recursion::async_recursion]
+    async fn recursive_items(&self, path: &PathBuf) -> Result<Vec<(PathBuf, Cid)>, LeakyError> {
+        let mut items = vec![];
+        let links = match self.ls(path).await {
+            Ok(l) => l,
+            Err(err) => match err {
+                LeakyError::PathNotDir(_) => {
+                    return Ok(items);
+                }
+                _ => return Err(err),
+            },
+        };
+        for (name, (_link, object)) in links {
+            // If this is a directory, recurse
+            if object.is_none() {
+                let mut path = path.clone();
+                path.push(name);
+                let mut next_items = self.recursive_items(&path).await?;
+                items.append(&mut next_items);
+            } else {
+                let mut path = path.clone();
+                path.push(name);
+                items.push((path, _link));
+            }
+        }
+        Ok(items)
+    }
 
     #[async_recursion::async_recursion]
     async fn pull_links(&mut self, cid: &Cid) -> Result<(), LeakyError> {
@@ -490,11 +546,14 @@ impl Leaky {
 
     async fn get_cache<B>(&self, cid: &Cid) -> Result<B, LeakyError>
     where
-        B: TryFrom<Ipld>,
+        B: TryFrom<Ipld> + Send,
     {
         let block_cache = self.block_cache.lock().unwrap();
         let cid_str = cid_string(cid);
-        let ipld = block_cache.get(&cid_str).unwrap();
+        let ipld = match block_cache.get(&cid_str) {
+            Some(i) => i,
+            None => return Err(LeakyError::BlockCacheMiss(*cid)),
+        };
         let object = B::try_from(ipld.clone()).map_err(|_| LeakyError::Ipld)?;
 
         Ok(object)
@@ -522,8 +581,12 @@ impl Leaky {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LeakyError {
+    #[error("block cache miss: {0}")]
+    BlockCacheMiss(Cid),
     #[error("blockstore error: {0}")]
     IpfsRpc(#[from] IpfsRpcError),
+    #[error("leaky api error: {0}")]
+    LeakyApi(#[from] LeakyApiError),
     #[error("serde error: {0}")]
     Serde(#[from] serde_json::Error),
     #[error("could not convert Ipld to type")]
