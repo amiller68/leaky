@@ -7,11 +7,13 @@ use futures_util::TryStreamExt;
 use http::uri::Scheme;
 use ipfs_api_backend_hyper::request::{Add as AddRequest, BlockPut as BlockPutRequest};
 use ipfs_api_backend_hyper::IpfsApi;
-use ipfs_api_backend_hyper::{IpfsClient, TryFromUri};
+use ipfs_api_backend_hyper::TryFromUri;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::types::{Cid, IpldCodec, MhCode};
+
+pub use ipfs_api_backend_hyper::IpfsClient;
 
 /* Constants */
 
@@ -21,9 +23,9 @@ const DEFAULT_MH_TYPE: &str = "blake3";
 /* Ipfs Rpc Client Wrapper */
 
 #[derive(Clone)]
-pub struct IpfsRpc(IpfsClient);
+pub struct IpfsRpc<T: Send>(T);
 
-impl Default for IpfsRpc {
+impl Default for IpfsRpc<IpfsClient> {
     fn default() -> Self {
         let url: Url = "http://localhost:5001".try_into().unwrap();
         Self::try_from(url).unwrap()
@@ -31,7 +33,7 @@ impl Default for IpfsRpc {
 }
 
 // TODO: make this less convoluted
-impl TryFrom<Url> for IpfsRpc {
+impl TryFrom<Url> for IpfsRpc<IpfsClient> {
     type Error = IpfsRpcError;
     fn try_from(url: Url) -> Result<Self, IpfsRpcError> {
         let scheme = Scheme::try_from(url.scheme())?;
@@ -50,14 +52,14 @@ impl TryFrom<Url> for IpfsRpc {
     }
 }
 
-impl Deref for IpfsRpc {
+impl Deref for IpfsRpc<IpfsClient> {
     type Target = IpfsClient;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl IpfsRpc {
+impl IpfsRpc<IpfsClient> {
     // TODO: LOCALIZE
     // Hash raw data using the specified hash function
     // # Arguments

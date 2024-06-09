@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
+use crate::ipfs_rpc::{IpfsClient, IpfsRpc, IpfsRpcError};
 use crate::leaky_api::{LeakyApi, LeakyApiError};
 use crate::types::{
     Block, Cid, DagCborCodec, DefaultParams, Ipld, IpldCodec, Manifest, MhCode, Node, Object,
@@ -52,7 +52,10 @@ pub fn clean_path(path: &PathBuf) -> PathBuf {
 
 #[derive(Clone)]
 pub struct Leaky {
-    ipfs_rpc: IpfsRpc,
+    ipfs_rpc: IpfsRpc<IpfsClient>,
+
+    // Leaky API for Clients -- not needed for server
+    #[cfg(feature = "leaky-api")]
     leaky_api: LeakyApi,
 
     cid: Option<Cid>,
@@ -68,6 +71,7 @@ struct LeakyDisk {
     cid: Cid,
 }
 
+#[cfg(feature = "leaky-api")]
 impl Default for Leaky {
     fn default() -> Self {
         let ipfs_rpc_url = Url::parse("http://localhost:5001").unwrap();
@@ -76,13 +80,33 @@ impl Default for Leaky {
     }
 }
 
+#[cfg(not(feature = "leaky-api"))]
+impl Default for Leaky {
+    fn default() -> Self {
+        let ipfs_rpc_url = Url::parse("http://localhost:5001").unwrap();
+        Self::new(ipfs_rpc_url).unwrap()
+    }
+}
+
 impl Leaky {
+    #[cfg(feature = "leaky-api")]
     pub fn new(ipfs_rpc_url: Url, leaky_api_url: Url) -> Result<Self, LeakyError> {
         let ipfs_rpc = IpfsRpc::try_from(ipfs_rpc_url)?;
         let leaky_api = LeakyApi::try_from(leaky_api_url)?;
         Ok(Self {
             ipfs_rpc,
             leaky_api,
+            cid: None,
+            manifest: None,
+            block_cache: Arc::new(Mutex::new(BlockCache::default())),
+        })
+    }
+
+    #[cfg(not(feature = "leaky-api"))]
+    pub fn new(ipfs_rpc_url: Url) -> Result<Self, LeakyError> {
+        let ipfs_rpc = IpfsRpc::try_from(ipfs_rpc_url)?;
+        Ok(Self {
+            ipfs_rpc,
             cid: None,
             manifest: None,
             block_cache: Arc::new(Mutex::new(BlockCache::default())),
@@ -146,6 +170,7 @@ impl Leaky {
         Ok(())
     }
 
+    #[cfg(feature = "leaky-api")]
     pub async fn pull_root_cid(&mut self) -> Result<Cid, LeakyError> {
         let cid = self.leaky_api.pull_root().await?;
         Ok(cid)
@@ -166,6 +191,7 @@ impl Leaky {
     }
 
     // TODO: pushing should not affect the local state
+    #[cfg(feature = "leaky-api")]
     pub async fn push(&mut self) -> Result<(), LeakyError> {
         // Iterate over the block cache and push all the blocks to ipfs_rpc
         for (cid_str, object) in self.block_cache.lock().unwrap().iter() {

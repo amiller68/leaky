@@ -9,7 +9,7 @@ name = "leaky"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-leaky-common = { path = "../common/" }
+leaky-common = { path = "../common/", features = ["leaky-api"] }
 
 anyhow = "1.0.80"
 async-recursion = "1.1.0"

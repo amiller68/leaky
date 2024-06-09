@@ -1,5 +1,6 @@
 pub use libipld::cbor::DagCborCodec;
 pub use libipld::cid::multihash::Code as MhCode;
+pub use libipld::cid::Error as CidError;
 pub use libipld::store::DefaultParams;
 pub use libipld::Block;
 pub use libipld::Cid;
