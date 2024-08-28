@@ -89,8 +89,3 @@ pub enum LeakyApiError {
     #[error("Api error: {0} {1}")]
     Api(reqwest::StatusCode, String),
 }
-
-/*
-#[cfg(test)]
-mod tests {}
-*/
