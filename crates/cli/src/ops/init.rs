@@ -1,20 +1,29 @@
-use url::Url;
-
 use leaky_common::prelude::*;
 
-use super::utils;
+use std::path::PathBuf;
 
-pub async fn init(ipfs_rpc_url: Url, leaky_api_url: Url) -> Result<Cid, InitError> {
-    let mut leaky = utils::init_on_disk(ipfs_rpc_url, leaky_api_url, None).await?;
-    leaky.push().await?;
-    let cid = leaky.cid()?;
-    Ok(cid)
+use async_trait::async_trait;
+
+use crate::{AppState, Op};
+
+#[derive(Debug, clap::Args, Clone)]
+pub struct Init {
+    #[clap(short, long)]
+    input: PathBuf,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum InitError {
     #[error("default error: {0}")]
     Default(#[from] anyhow::Error),
-    #[error("leaky error: {0}")]
-    Leaky(#[from] LeakyError),
+}
+
+#[async_trait]
+impl Op for Init {
+    type Error = InitError;
+    type Output = Cid;
+
+    async fn execute(&self, _state: &AppState) -> Result<Self::Output, Self::Error> {
+        Ok(Cid::default())
+    }
 }

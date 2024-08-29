@@ -1,4 +1,5 @@
 // build.rs
+
 fn report_build_profile() {
     println!(
         "cargo:rustc-env=BUILD_PROFILE={}",
@@ -37,6 +38,7 @@ fn report_repository_version() {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    let _target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     report_build_profile();
     report_enabled_features();
     report_repository_version();
