@@ -6,7 +6,8 @@ mod mount;
 mod types;
 
 pub mod prelude {
-    pub use crate::mount::{Mount, MountError};
+    pub use crate::api::api_requests;
+    pub use crate::mount::{BlockCache, Mount, MountError};
     pub use crate::types::{Cid, Ipld, Manifest, Object, Version};
 }
 

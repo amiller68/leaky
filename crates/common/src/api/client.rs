@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, Url,
@@ -5,8 +7,9 @@ use reqwest::{
 use std::fmt::Debug;
 use thumbs_up::prelude::{ApiToken, EcKey, PrivateKey, PublicKey};
 
+use super::api_requests::ApiRequest;
 use super::error::ApiError;
-use super::requests::ApiRequest;
+use crate::ipfs_rpc::{IpfsClient, IpfsRpc};
 
 /// The audience for the API token
 const AUDIENCE: &str = "leaky";
@@ -64,7 +67,7 @@ impl ApiClient {
     /// # Errors
     /// * `ApiClientError` - If there is an error generating the token.
     ///    If the bearer token can not be encoded, or if the signing key is not available.
-    pub async fn bearer_token(&mut self) -> Result<String, ApiError> {
+    pub fn bearer_token(&mut self) -> Result<String, ApiError> {
         match &self.claims {
             Some(claims) => {
                 let is_expired = claims.is_expired()?;
@@ -92,7 +95,7 @@ impl ApiClient {
 
     /// Simple shortcut for checking if a user is authenticated
     pub async fn is_authenticated(&mut self) -> bool {
-        self.bearer_token().await.is_ok()
+        self.bearer_token().is_ok()
     }
 
     /// Call a method that implements ApiRequest on the core server
@@ -102,7 +105,7 @@ impl ApiClient {
         let mut request_builder = request.build_request(&self.remote, &self.client);
 
         if add_authentication {
-            let bearer_token = self.bearer_token().await?;
+            let bearer_token = self.bearer_token()?;
             request_builder = request_builder.bearer_auth(bearer_token);
         }
 
@@ -116,5 +119,16 @@ impl ApiClient {
         } else {
             Err(ApiError::HttpStatus(response.status()))
         }
+    }
+
+    pub fn ipfs(&mut self) -> Result<IpfsRpc<IpfsClient>, ApiError> {
+        let url = self.remote.clone().join("ipfs").unwrap();
+        let client = IpfsRpc::try_from(url).expect("valid ipfs url");
+        if self.signing_key.is_some() {
+            let client = client
+                .clone()
+                .with_bearer_token(&self.bearer_token()?.clone());
+        }
+        Ok(client)
     }
 }

@@ -88,9 +88,7 @@ impl Mount {
         let manifest = Mount::get::<Manifest>(&cid, ipfs_rpc).await?;
         let block_cache = Arc::new(Mutex::new(BlockCache::default()));
 
-        println!("pull_links");
-        Mount::pull_links(manifest.data(), ipfs_rpc, &block_cache).await?;
-        println!("pull_links 1");
+        Mount::pull_links(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
 
         Ok(Self {
             cid,
@@ -219,7 +217,6 @@ impl Mount {
         &self,
         path: &PathBuf,
     ) -> Result<Vec<(String, (Cid, Option<Object>))>, MountError> {
-        let ipfs_rpc = &self.ipfs_rpc;
         let block_cache = &self.block_cache;
         let path = clean_path(path);
         let data_node_cid = {
@@ -329,15 +326,18 @@ impl Mount {
     #[async_recursion::async_recursion]
     async fn pull_links(
         cid: &Cid,
-        ipfs_rpc: &IpfsRpc<IpfsClient>,
         block_cache: &Arc<Mutex<BlockCache>>,
+        ipfs_rpc: Option<&IpfsRpc<IpfsClient>>,
     ) -> Result<(), MountError> {
-        let node = Mount::get::<Node>(cid, ipfs_rpc).await?;
+        let node = if let Some(ipfs_rpc) = ipfs_rpc {
+            Mount::get::<Node>(cid, ipfs_rpc).await?
+        } else {
+            Mount::get_cache::<Node>(cid, block_cache).await?
+        };
         block_cache
             .lock()
             .unwrap()
             .insert(cid.to_string(), node.clone().into());
-        println!("pull_links -- locker");
 
         // Recurse from down the data node, pulling all the nodes
         for (_name, link) in node.clone().iter() {
@@ -347,8 +347,7 @@ impl Mount {
                     if cid.codec() == 0x55 {
                         return Ok(());
                     };
-                    println!("pull_links -- locker 1");
-                    Mount::pull_links(cid, ipfs_rpc, block_cache).await?;
+                    Mount::pull_links(cid, block_cache, ipfs_rpc).await?;
                 }
                 // Just ignore anything that's not a link
                 _ => {}

@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::Display;
 
 use clap::Subcommand;
-use url::Url;
+use std::path::PathBuf;
 
 use super::ops::Init as InitOp;
 use super::AppState;
@@ -66,10 +66,8 @@ pub struct Args {
     #[command(subcommand)]
     pub command: Command,
 
-    #[clap(long = "leaky-remote-url", short = 'i')]
-    pub maybe_leaky_remote_url: Option<Url>,
-    #[clap(long = "private-key", short = 'p')]
-    pub maybe_private_key_hex: Option<String>,
+    #[clap(short = 'p', long = "leaky-path", default_value = ".leaky")]
+    pub leaky_path: PathBuf,
 }
 
 use crate::command_enum;

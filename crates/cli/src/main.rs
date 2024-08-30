@@ -4,12 +4,14 @@
 use std::convert::TryFrom;
 
 mod args;
+mod change_log;
 mod error;
 mod ops;
 mod state;
 mod version;
 
 use args::{Args, Op, Parser};
+use change_log::ChangeLog;
 use state::AppState;
 
 #[tokio::main]

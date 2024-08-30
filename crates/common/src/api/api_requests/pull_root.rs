@@ -1,23 +1,24 @@
 use reqwest::{Client, RequestBuilder, Url};
-use serde::Serialize;
+use serde::Deserialize;
 
-use crate::api::requests::ApiRequest;
+use crate::api::api_requests::ApiRequest;
 
-#[derive(Debug, Serialize)]
-pub struct PushRoot {
+pub struct PullRoot;
+
+#[derive(Debug, Deserialize)]
+pub struct PullRootResponse {
     cid: String,
-    previous_cid: String,
 }
 
-impl ApiRequest for PushRoot {
-    type Response = ();
+impl ApiRequest for PullRoot {
+    type Response = PullRootResponse;
 
     fn build_request(self, base_url: &Url, client: &Client) -> RequestBuilder {
         let full_url = base_url.join("/api/v0/root").unwrap();
-        client.post(full_url).json(&self)
+        client.get(full_url)
     }
 
     fn requires_authentication(&self) -> bool {
-        true
+        false
     }
 }

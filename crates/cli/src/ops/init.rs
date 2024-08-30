@@ -1,6 +1,6 @@
 use leaky_common::prelude::*;
 
-use std::path::PathBuf;
+use url::Url;
 
 use async_trait::async_trait;
 
@@ -9,7 +9,7 @@ use crate::{AppState, Op};
 #[derive(Debug, clap::Args, Clone)]
 pub struct Init {
     #[clap(short, long)]
-    input: PathBuf,
+    pub remote: Url,
 }
 
 #[derive(Debug, thiserror::Error)]
