@@ -37,17 +37,11 @@ impl TryFrom<Url> for IpfsRpc<IpfsClient> {
     type Error = IpfsRpcError;
     fn try_from(url: Url) -> Result<Self, IpfsRpcError> {
         let scheme = Scheme::try_from(url.scheme())?;
-        let username = url.username();
-        let maybe_password = url.password();
         let host_str = url
             .host_str()
             .ok_or(IpfsRpcError::Url(url::ParseError::EmptyHost))?;
         let port = url.port().unwrap_or(5001);
-        let client = match maybe_password {
-            Some(password) => IpfsClient::from_host_and_port(scheme, host_str, port)?
-                .with_credentials(username, password),
-            None => IpfsClient::from_host_and_port(scheme, host_str, port)?,
-        };
+        let client = IpfsClient::from_host_and_port(scheme, host_str, port)?;
         Ok(Self(client))
     }
 }
@@ -60,6 +54,11 @@ impl Deref for IpfsRpc<IpfsClient> {
 }
 
 impl IpfsRpc<IpfsClient> {
+    pub fn with_bearer_token(self, token: &str) -> Self {
+        let client = self.0.with_bearer_token(token);
+        IpfsRpc(client)
+    }
+
     // TODO: LOCALIZE
     // Hash raw data using the specified hash function
     // # Arguments
