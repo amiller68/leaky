@@ -7,7 +7,6 @@ use url::Url;
 
 use leaky_common::prelude::*;
 
-use crate::api::{ApiClient, ApiError};
 use crate::args::Command;
 
 use super::Args;
@@ -78,9 +77,8 @@ pub enum AppStateSetupError {
 
     #[error("missing data path")]
     MissingDataPath,
-
     #[error("api error: {0}")]
-    ApiError(#[from] ApiError),
+    ApiError(#[from] leaky_common::error::ApiError),
 }
 
 impl AppState {

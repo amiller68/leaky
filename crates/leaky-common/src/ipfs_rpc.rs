@@ -173,7 +173,7 @@ pub enum IpfsRpcError {
     #[error("Failed to build client: {0}")]
     Client(#[from] ipfs_api_backend_hyper::Error),
     #[error("cid error")]
-    Cid(#[from] wnfs::common::libipld::cid::Error),
+    Cid(#[from] crate::types::CidError),
 }
 
 #[cfg(test)]

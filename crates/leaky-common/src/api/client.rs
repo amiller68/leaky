@@ -9,7 +9,7 @@ use thumbs_up::prelude::{ApiToken, EcKey, PrivateKey, PublicKey};
 
 use super::api_requests::ApiRequest;
 use super::error::ApiError;
-use leaky_common::prelude::IpfsRpc;
+use crate::ipfs_rpc::IpfsRpc;
 
 /// The audience for the API token
 const AUDIENCE: &str = "leaky";
@@ -123,11 +123,12 @@ impl ApiClient {
 
     pub fn ipfs_rpc(&mut self) -> Result<IpfsRpc, ApiError> {
         let url = self.remote.clone().join("ipfs").unwrap();
-        let client = IpfsRpc::try_from(url).expect("valid ipfs url");
+        let mut client = IpfsRpc::try_from(url).expect("valid ipfs url");
         if self.signing_key.is_some() {
-            let client = client
+            client = client
                 .clone()
                 .with_bearer_token(self.bearer_token()?.clone());
+            return Ok(client);
         }
         Ok(client)
     }

@@ -1,9 +1,8 @@
 #![allow(dead_code)]
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 use std::convert::TryFrom;
 
-pub mod api;
 mod args;
 mod change_log;
 mod error;

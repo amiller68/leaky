@@ -10,7 +10,7 @@ use crate::database::Database;
 #[derive(Clone)]
 pub struct AppState {
     sqlite_database: Database,
-    ipfs_rpc: IpfsRpc<IpfsClient>,
+    ipfs_rpc: IpfsRpc,
 }
 
 #[allow(dead_code)]
@@ -19,7 +19,7 @@ impl AppState {
         &self.sqlite_database
     }
 
-    pub fn ipfs_rpc(&self) -> &IpfsRpc<IpfsClient> {
+    pub fn ipfs_rpc(&self) -> &IpfsRpc {
         &self.ipfs_rpc
     }
 
@@ -40,7 +40,7 @@ impl FromRef<AppState> for Database {
     }
 }
 
-impl FromRef<AppState> for IpfsRpc<IpfsClient> {
+impl FromRef<AppState> for IpfsRpc {
     fn from_ref(app_state: &AppState) -> Self {
         app_state.ipfs_rpc.clone()
     }

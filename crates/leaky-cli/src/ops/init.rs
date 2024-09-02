@@ -1,4 +1,4 @@
-use crate::{api::api_requests::PushRoot, AppState, Op};
+use crate::{AppState, Op};
 use async_trait::async_trait;
 use leaky_common::prelude::*;
 use std::sync::Arc;
@@ -22,8 +22,7 @@ pub enum InitError {
     Ipfs(#[from] leaky_common::error::IpfsRpcError),
 
     #[error("api error: {0}")]
-    Api(#[from] crate::api::ApiError),
-
+    Api(#[from] leaky_common::error::ApiError),
     #[error("mount error: {0}")]
     Mount(#[from] leaky_common::error::MountError),
 }
