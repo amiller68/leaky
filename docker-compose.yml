@@ -1,0 +1,50 @@
+version: '3'
+
+services:
+  ipfs:
+    image: ipfs/go-ipfs:latest
+    ports:
+      - "4001"  # IPFS swarm
+      - "8080"  # IPFS gateway
+      - "5001"  # IPFS API
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - nginx
+
+  leaky:
+    build:
+      context: .
+      dockerfile: crates/server/Dockerfile
+    expose:
+      - "3000"
+    volumes:
+      - .:app:cached
+      - leaky_target:/app/target
+      - leaky_data:/app/data
+    environment:
+      - LISTEN_ADDR=0.0.0.0:3000
+      - SQLITE_DATABASE_URL=sqlite:///app/data/server.db
+      - IPFS_RPC_URL=http://ipfs:5001
+    networks:
+      - nginx
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.dev.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - ipfs
+      - leaky
+    networks:
+      - nginx
+
+networks:
+  nginx:
+    driver: bridge
+
+volumes:
+  ipfs_data:
+  leaky_data:
