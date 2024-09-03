@@ -1,10 +1,11 @@
-use cid::Cid;
 use multibase::Base;
 use serde::{Deserialize, Serialize};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 use sqlx::sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef};
 use sqlx::{Decode, Encode, Sqlite, Type};
+
+use leaky_common::prelude::Cid;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(transparent)]
@@ -53,5 +54,5 @@ impl Type<Sqlite> for DCid {
 #[derive(Debug, thiserror::Error)]
 pub enum DCidError {
     #[error("invalid cid: {0}")]
-    InvalidCid(#[from] cid::Error),
+    InvalidCid(#[from] leaky_common::error::CidError),
 }

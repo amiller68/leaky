@@ -1,58 +1,14 @@
-use std::fs::File;
+use std::sync::Arc;
+
+use async_trait::async_trait;
 
 use leaky_common::prelude::*;
 
-use super::change_log::ChangeType;
-use super::utils;
+use crate::change_log::ChangeType;
+use crate::{AppState, Op};
 
-pub async fn push() -> Result<Cid, PushError> {
-    let (mut leaky, change_log) = utils::load_on_disk().await?;
-
-    let mut updates = change_log.clone();
-
-    let root_cid = leaky.cid()?;
-
-    let mut changed = false;
-    let change_log_iter = change_log.iter();
-    // Iterate over the ChangeLog -- play updates against the base ... probably better to do this
-    for (path, (hash, diff_type)) in change_log_iter {
-        match diff_type {
-            ChangeType::Added { .. } => {
-                changed = true;
-                let file = File::open(&path)?;
-                leaky.add_data(file).await?;
-                updates.insert(path.clone(), (*hash, ChangeType::Base));
-            }
-
-            ChangeType::Modified => {
-                changed = true;
-                let file = File::open(&path)?;
-                leaky.add_data(file).await?;
-                updates.insert(path.clone(), (*hash, ChangeType::Base));
-            }
-
-            ChangeType::Removed => {
-                changed = true;
-                updates.insert(path.clone(), (*hash, ChangeType::Base));
-            }
-
-            _ => {}
-        }
-    }
-
-    if !changed {
-        println!("No added changes to push");
-        return Ok(root_cid);
-    }
-
-    leaky.push().await?;
-
-    let root_cid = leaky.cid()?;
-
-    utils::save_on_disk(&mut leaky, &updates).await?;
-
-    Ok(root_cid)
-}
+#[derive(Debug, clap::Args, Clone)]
+pub struct Push;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PushError {
@@ -69,5 +25,58 @@ pub enum PushError {
     #[error("could not strip prefix: {0}")]
     PathPrefix(#[from] std::path::StripPrefixError),
     #[error("device error: {0}")]
-    Leaky(#[from] LeakyError),
+    Mount(#[from] MountError),
+    #[error("api error: {0}")]
+    Api(#[from] leaky_common::error::ApiError),
+    #[error("app state error: {0}")]
+    AppState(#[from] crate::state::AppStateSetupError),
+}
+
+#[async_trait]
+impl Op for Push {
+    type Error = PushError;
+    type Output = Cid;
+
+    async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
+        let mut client = state.client()?;
+        let cid = state.cid().clone();
+        let previous_cid = state.previous_cid().clone();
+        
+        if cid == previous_cid {
+            println!("No changes to push");
+            return Ok(cid);
+        }
+
+        let mut change_log = state.change_log().clone();
+        let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
+        let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
+
+        mount.set_previous(previous_cid);
+        mount.push().await?;
+        let cid = mount.cid().clone();
+
+        let push_root_req = PushRoot {
+            cid: cid.to_string(),
+            previous_cid: previous_cid.to_string(),
+        };
+        client.call(push_root_req).await?;
+
+        let mut updates = change_log.clone();
+        // Update the changelog to drop removed, and set everything else to base
+        let change_log_iter = change_log.iter_mut();
+        for (path, (hash, diff_type)) in change_log_iter {
+            match diff_type {
+                ChangeType::Removed => {
+                    updates.remove(path);
+                }
+                _ => {
+                    updates.insert(path.clone(), (hash.clone(), ChangeType::Base));
+                }
+            }
+        }
+
+        state.save(&mount, Some(&updates), Some(cid.clone()))?;
+
+        Ok(cid)
+    }
 }

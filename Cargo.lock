@@ -1598,7 +1598,7 @@ dependencies = [
 [[package]]
 name = "ipfs-api-backend-hyper"
 version = "0.6.0"
-source = "git+https://github.com/amiller68/rust-ipfs-api#1c1a6c0a9e73ac7a647be117d2a576e5f3aa353b"
+source = "git+https://github.com/amiller68/rust-ipfs-api#24629afe33c5566bf831993db12b16e8a453428c"
 dependencies = [
  "async-trait",
  "base64 0.13.1",
@@ -1615,7 +1615,7 @@ dependencies = [
 [[package]]
 name = "ipfs-api-prelude"
 version = "0.6.0"
-source = "git+https://github.com/amiller68/rust-ipfs-api#1c1a6c0a9e73ac7a647be117d2a576e5f3aa353b"
+source = "git+https://github.com/amiller68/rust-ipfs-api#24629afe33c5566bf831993db12b16e8a453428c"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1790,6 +1790,7 @@ dependencies = [
  "ipfs-api-backend-hyper",
  "ipld-core",
  "libipld",
+ "parking_lot",
  "pico-args",
  "rand",
  "reqwest 0.11.27",

@@ -1,5 +1,6 @@
 use std::convert::TryFrom;
 use std::io::Read;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use futures_util::TryStreamExt;
@@ -44,6 +45,12 @@ impl IpfsRpc {
         self
     }
 
+    pub fn with_path(mut self, path: &str) -> Self {
+        let path = PathBuf::from(path);
+        self.client = self.client.with_path(path);
+        self
+    }
+
     pub async fn hash_data<R>(&self, code: MhCode, data: R) -> Result<Cid, IpfsRpcError>
     where
         R: Read + Send + Sync + 'static + Unpin,
@@ -57,7 +64,14 @@ impl IpfsRpc {
         options.hash = Some(hash);
         options.cid_version = Some(DEFAULT_CID_VERSION);
         options.only_hash = Some(true);
-        let response = self.client.add_with_options(data, options).await?;
+        let client = self.client.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(async move { client.add_with_options(data, options).await })
+        })
+        .await
+        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
+
         let cid = Cid::from_str(&response.hash)?;
         Ok(cid)
     }
@@ -76,21 +90,40 @@ impl IpfsRpc {
         options.hash = Some(hash);
         options.cid_version = Some(DEFAULT_CID_VERSION);
 
-        let response = self.client.add_with_options(data, options).await?;
+        let client = self.client.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(async move { client.add_with_options(data, options).await })
+        })
+        .await
+        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
         let cid = Cid::from_str(&response.hash)?;
 
         Ok(cid)
     }
 
     pub async fn cat_data(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
-        let response_stream = self
-            .client
-            .cat(&cid.to_string())
-            .map_ok(|chunk| chunk.to_vec())
-            .try_concat()
-            .await?;
-        Ok(response_stream)
+        let client = self.client.clone();
+        let cid_string = cid.to_string();
+
+        // Spawn a blocking task to perform the potentially blocking operation
+        let result = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    client
+                        .cat(&cid_string)
+                        .map_ok(|chunk| chunk.to_vec())
+                        .try_concat()
+                        .await
+                })
+        })
+        .await
+        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
+
+        Ok(result)
     }
+
 
     // NOTE: had to wrap the client call in a spawn_blocking because the client doesn't implement Send
     pub async fn put_block<R>(
@@ -134,15 +167,31 @@ impl IpfsRpc {
     }
 
     pub async fn has_block(&self, cid: &Cid) -> Result<bool, IpfsRpcError> {
-        let response = self.client.pin_ls(Some(&cid.to_string()), None).await?;
+        let cid = *cid;
+        let client = self.client.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(async move { client.pin_ls(Some(&cid.to_string()), None).await })
+        })
+        .await
+        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
+
         let keys = response.keys;
         Ok(keys.contains_key(&cid.to_string()))
     }
 
     pub async fn get_block(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
-        let stream = self.client.block_get(&cid.to_string());
-        let block_data = stream.map_ok(|chunk| chunk.to_vec()).try_concat().await?;
-        Ok(block_data)
+        let cid = *cid;
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current().block_on(async move {
+                let stream = client.block_get(&cid.to_string());
+                let block_data = stream.map_ok(|chunk| chunk.to_vec()).try_concat().await?;
+                Ok(block_data)
+            })
+        })
+        .await
+        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))?
     }
 
     pub async fn get_block_send_safe(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {

@@ -43,4 +43,3 @@ fn main() {
     report_enabled_features();
     report_repository_version();
 }
-

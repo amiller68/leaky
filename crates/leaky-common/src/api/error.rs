@@ -6,8 +6,8 @@ pub enum ApiError {
     Url(#[from] url::ParseError),
     #[error("reqwest error: {0}")]
     Reqwest(#[from] reqwest::Error),
-    #[error("status code: {0}")]
-    HttpStatus(reqwest::StatusCode),
+    #[error("status code: {0}: {1}")]
+    HttpStatus(reqwest::StatusCode, String),
     #[error("sthumbs up: {0}")]
     ThumbsUp(#[from] thumbs_up::prelude::KeyError),
     #[error("boxed request error: {0}")]

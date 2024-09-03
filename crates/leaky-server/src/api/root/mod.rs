@@ -1,11 +1,13 @@
+use axum::routing::get;
 use axum::Router;
 use http::header::{ACCEPT, ORIGIN};
 use http::Method;
 use tower_http::cors::{Any, CorsLayer};
 
-mod root;
-
 use crate::app::AppState;
+
+mod pull_root;
+mod push_root;
 
 pub fn router(state: AppState) -> Router<AppState> {
     let cors_layer = CorsLayer::new()
@@ -15,7 +17,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .allow_credentials(false);
 
     Router::new()
-        .nest("/root", root::router(state.clone()))    
+        .route("/", get(pull_root::handler).post(push_root::handler))
         .with_state(state)
         .layer(cors_layer)
 }

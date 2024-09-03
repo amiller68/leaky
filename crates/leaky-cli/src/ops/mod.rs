@@ -1,24 +1,16 @@
-mod init;
-
-/*
 mod add;
-mod change_log;
 mod diff;
 mod init;
 mod pull;
 mod push;
+mod utils;
 mod stat;
-mod tag;
-pub mod utils;
-*/
+// mod tag;
 
+
+pub use add::Add;
 pub use init::Init;
-
-/*
-pub use add::{add, AddError};
-pub use init::{init, InitError};
-pub use pull::{pull, PullError};
-pub use push::{push, PushError};
-pub use stat::{stat, StatError};
-pub use tag::{tag, TagError};
-*/
+pub use pull::Pull;
+pub use push::Push;
+pub use stat::Stat;
+// pub use tag::Tag;

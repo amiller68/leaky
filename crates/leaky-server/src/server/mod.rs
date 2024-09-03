@@ -6,9 +6,11 @@ use tower_http::LatencyUnit;
 use crate::api;
 use crate::app::{AppState, AppStateSetupError, Config};
 use crate::health;
+use crate::content;
 
 mod error_handlers;
 
+const CONTENT_PREFIX: &str = "/content";
 const HEALTH_PREFIX: &str = "/_status";
 const API_PREFIX: &str = "/api/v0";
 
@@ -29,6 +31,7 @@ pub async fn run(
         .on_failure(DefaultOnFailure::new().latency_unit(LatencyUnit::Micros));
 
     let root_router = Router::new()
+        .nest(CONTENT_PREFIX, content::router(state.clone()))
         .nest(API_PREFIX, api::router(state.clone()))
         .nest(HEALTH_PREFIX, health::router(state.clone()))
         .with_state(state)

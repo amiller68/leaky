@@ -1,13 +1,22 @@
+use std::str::FromStr;
+
 use reqwest::{Client, RequestBuilder, Url};
 use serde::Deserialize;
 
 use crate::api::api_requests::ApiRequest;
+use crate::types::Cid;
 
 pub struct PullRoot;
 
 #[derive(Debug, Deserialize)]
 pub struct PullRootResponse {
     cid: String,
+}
+
+impl PullRootResponse {
+    pub fn cid(&self) -> Cid {
+        Cid::from_str(&self.cid).unwrap()
+    }
 }
 
 impl ApiRequest for PullRoot {

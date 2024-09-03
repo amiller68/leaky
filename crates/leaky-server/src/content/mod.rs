@@ -1,9 +1,10 @@
+use axum::routing::get;
 use axum::Router;
 use http::header::{ACCEPT, ORIGIN};
 use http::Method;
 use tower_http::cors::{Any, CorsLayer};
 
-mod root;
+mod get_content;
 
 use crate::app::AppState;
 
@@ -15,7 +16,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .allow_credentials(false);
 
     Router::new()
-        .nest("/root", root::router(state.clone()))    
+        .route("/*path", get(get_content::handler))
         .with_state(state)
         .layer(cors_layer)
 }

@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use leaky_common::prelude::*;
 
-use super::change_log::{ChangeLog, ChangeType};
 use super::utils;
+use crate::change_log::{ChangeLog, ChangeType};
 
-pub async fn diff(leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
+pub async fn diff(leaky: &Mount, base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
     let base: &mut ChangeLog = base;
     let mut update = base.clone();
     let next = utils::fs_tree()?;
@@ -53,7 +53,7 @@ pub async fn diff(leaky: &Leaky, base: &mut ChangeLog) -> Result<ChangeLog, Diff
                         let hash = utils::hash_file(&next_path, leaky).await?;
                         update.insert(
                             next_path.clone(),
-                            (hash, ChangeType::Added { modified: true }),
+                            (hash, ChangeType::Added { modified: false }),
                         );
                     }
                     next_next = next_iter.next();
@@ -148,7 +148,7 @@ pub enum DiffError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("leaky error: {0}")]
-    Leaky(#[from] LeakyError),
+    Mount(#[from] MountError),
     #[error("file does not exist")]
     PathDoesNotExist(PathBuf),
     #[error("path is a directory")]

@@ -45,11 +45,11 @@ impl Config {
         };
         let sqlite_database_url = Url::parse(&sqlite_database_url_str)?;
 
-        let ipfs_rpc_url_str = match env::var("IPFS_API_URL") {
+        let ipfs_rpc_url_str = match env::var("IPFS_RPC_URL") {
             Ok(url) => url,
             Err(_e) => {
                 tracing::warn!("No IPFS_API_URL found in .env");
-                "http://localhost:8080".to_string()
+                "http://localhost:3001".to_string()
             }
         };
         let ipfs_rpc_url = Url::parse(&ipfs_rpc_url_str)?;

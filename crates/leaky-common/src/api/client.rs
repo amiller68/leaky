@@ -117,13 +117,18 @@ impl ApiClient {
             // Interpret the response as a JSON object
             Ok(response.json::<T::Response>().await?)
         } else {
-            Err(ApiError::HttpStatus(response.status()))
+            Err(ApiError::HttpStatus(
+                response.status(),
+                response.text().await?,
+            ))
         }
     }
 
     pub fn ipfs_rpc(&mut self) -> Result<IpfsRpc, ApiError> {
-        let url = self.remote.clone().join("ipfs").unwrap();
-        let mut client = IpfsRpc::try_from(url).expect("valid ipfs url");
+        let url = self.remote.clone();
+        let mut client = IpfsRpc::try_from(url)
+            .expect("valid ipfs url")
+            .with_path("ipfs");
         if self.signing_key.is_some() {
             client = client
                 .clone()

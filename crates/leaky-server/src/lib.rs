@@ -4,6 +4,7 @@ mod database;
 mod health;
 mod server;
 mod version;
+mod content;
 
 use std::time::Duration;
 

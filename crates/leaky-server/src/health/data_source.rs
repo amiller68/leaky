@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+// TODO: add ipfs rpc readiness check
+
 use std::ops::Deref;
 use std::sync::Arc;
 

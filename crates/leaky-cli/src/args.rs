@@ -4,7 +4,11 @@ use std::fmt::Display;
 use clap::Subcommand;
 use std::path::PathBuf;
 
+use super::ops::Add as AddOp;
 use super::ops::Init as InitOp;
+use super::ops::Pull as PullOp;
+use super::ops::Push as PushOp;
+use super::ops::Stat as StatOp;
 use super::AppState;
 
 pub use clap::Parser;
@@ -74,13 +78,22 @@ use crate::command_enum;
 
 command_enum! {
     (Init, InitOp),
+    (Add, AddOp),
+    (Pull, PullOp),
+    (Push, PushOp),
+    (Stat, StatOp)
     // Define more commands here
 }
 
 impl fmt::Display for OpOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            _ => unimplemented!(),
+            OpOutput::Init(cid) => write!(f, "{}", cid),
+            OpOutput::Add(cid) => write!(f, "{}", cid),
+            OpOutput::Pull(cid) => write!(f, "{}", cid),
+            OpOutput::Push(cid) => write!(f, "{}", cid),
+            OpOutput::Stat(cid) => write!(f, "{}", cid)
+            // Define more outputs here
         }
     }
 }
