@@ -48,14 +48,10 @@ impl Op for Init {
         let path = std::path::Path::new(&self.key_path);
         let private_key_path = path.join(format!("leaky.prv"));
         let public_key_path = path.join(format!("leaky.pem"));
-        if path.is_dir() {
+        if path.is_dir() && !private_key_path.exists() && !public_key_path.exists() {
             std::fs::write(private_key_path, private_key_pem)?;
             std::fs::write(public_key_path.clone(), public_key_pem)?;
-        } else {
-            return Err(InitError::Default(anyhow::anyhow!(
-                "key path is not a directory"
-            )));
-        }
+        } 
         let mut client = state.client()?;
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
 

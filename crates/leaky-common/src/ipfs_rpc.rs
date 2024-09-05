@@ -33,7 +33,7 @@ impl TryFrom<Url> for IpfsRpc {
         let host_str = url
             .host_str()
             .ok_or(IpfsRpcError::Url(url::ParseError::EmptyHost))?;
-        let port = url.port().unwrap_or(5001);
+        let port = url.port().unwrap_or(443);
         let client = IpfsClient::from_host_and_port(scheme, host_str, port)?;
         Ok(Self { client })
     }

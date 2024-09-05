@@ -56,7 +56,7 @@ impl ApiClient {
         self.bearer_token = None;
         self.claims = Some(ApiToken::new(
             AUDIENCE.to_string(),
-            signing_key.public_key().unwrap().key_id().unwrap(),
+            "leaky".to_string(),
         ));
         self.signing_key = Some(signing_key);
     }

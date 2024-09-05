@@ -22,7 +22,7 @@ fs-tree = "0.5.5"
 futures-util = "0.3.30"
 http = "^0.2"
 ipfs-api-backend-hyper = { git = "https://github.com/amiller68/rust-ipfs-api", features = [
-  "hyper-tls",
+  "with-hyper-tls",
 ] }
 ipld-core = "0.4.1"
 libipld = { version = "0.16.0", features = ["serde-codec"] }
