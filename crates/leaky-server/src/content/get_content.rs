@@ -153,9 +153,9 @@ pub fn markdown_to_html(data: Vec<u8>, get_content_url: &Url) -> String {
     for caps in re.captures_iter(&html) {
         if let Some(cap) = caps.get(1) {
             let path = PathBuf::from(cap.as_str());
-            let path = path.strip_prefix("/").unwrap();
+            let path = path.strip_prefix("./").unwrap();
             let url = get_content_url
-                .join(&format!("/{}", path.to_str().unwrap()))
+                .join(path.to_str().unwrap())
                 .unwrap();
             let old = format!(r#"src="./{}""#, cap.as_str());
             let new = format!(r#"src="{}""#, url);

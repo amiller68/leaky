@@ -63,7 +63,7 @@ impl Op for Add {
         // Iterate over the ChangeLog -- play updates against the base ... probably better to do this
         for (path, abs_path, (_hash, diff_type)) in change_log_iter {
             match diff_type {
-                ChangeType::Added { modified: true } => {
+                ChangeType::Added { .. } => {
                     let file = File::open(&path)?;
                     mount.add(&abs_path, file, None, false).await?;
                 }
@@ -83,7 +83,7 @@ impl Op for Add {
                 }
             }
         }
-
+        mount.push().await?;
         let new_cid = mount.cid().clone();
 
         if new_cid == cid {
