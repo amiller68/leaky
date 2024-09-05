@@ -100,7 +100,7 @@ impl AppState {
         let key = EcKey::import(&key_bytes)?;
         let mut client = ApiClient::new(remote.as_str())?;
         client.with_credentials(key);
-        Ok(ApiClient::new(remote.as_str())?)
+        Ok(client)
     }
 
     pub fn manifest(&self) -> &Manifest {

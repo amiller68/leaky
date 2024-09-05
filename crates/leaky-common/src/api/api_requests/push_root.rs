@@ -25,7 +25,6 @@ impl ApiRequest for PushRoot {
     }
 
     fn requires_authentication(&self) -> bool {
-        // TODO: turn this on
-        false
+        true
     }
 }

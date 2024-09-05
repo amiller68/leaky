@@ -62,17 +62,7 @@ impl Op for Init {
         let cid = mount.cid().to_string();
 
         let push_root = PushRoot { cid, previous_cid };
-        match client.call(push_root).await {
-            Ok(_) => {}
-            Err(e) => match e {
-                leaky_common::error::ApiError::HttpStatus(_status, text) => {
-                    if text == "invalid link" {
-                        println!("remote already initialized");
-                    }
-                }
-                _ => return Err(InitError::Api(e)),
-            },
-        }
+        client.call(push_root).await?; 
 
         state.save(&mount, None, Some(*mount.cid()))?;
 
