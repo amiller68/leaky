@@ -10,20 +10,20 @@ services:
     restart: unless-stopped
 
   thumbs-up-http:
-    image: amiller68/thumbs-up-http:latest
+    image: amiller68/thumbs-up-http:20145991ec8250d4bd68d487a45f5b677c3e1d33
     ports:
       - "3000"
     volumes:
       - ./data:/app/data
     environment:
+      - LISTEN_ADDRESS=0.0.0.0
       - LISTEN_PORT=3000
-      - LISTEN_ADDR=0.0.0.0
       - PEM_DATA_PATH=/app/data/pems
       - ALLOWED_AUDIENCES=leaky-server
     restart: unless-stopped
 
   # TODO: connect to the real deployed image
-  leaky:
+  leaky-server:
     image: amiller68/leaky-server:latest
     ports:
       - "3000"
@@ -33,6 +33,7 @@ services:
       - LISTEN_ADDR=0.0.0.0:3000
       - SQLITE_DATABASE_URL=sqlite:///app/data/server.db
       - IPFS_RPC_URL=http://ipfs:5001
+      - GET_CONTENT_FORWARDING_URL=https://leaky.krondor.org/content
     restart: unless-stopped
 
   swag:
