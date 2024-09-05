@@ -1,0 +1,44 @@
+# Start our IPFS service on the host
+- hosts: all
+  name: Run Services
+  tasks:
+    - name: Check if the service user exists
+      become: yes
+      shell: id service
+      register: service_user_check
+      ignore_errors: true
+
+    - name: Create the service user (if it doesn't exist)
+      import_tasks: ./utils/create_service_user.tasks.yml
+      vars:
+        service_user: service
+      when: service_user_check.rc != 0
+
+    - name: Sync the contents of ./service to the service user's home directory
+      become: yes
+      ansible.posix.synchronize:
+        src: ./service
+        dest: /home/service
+        mode: push
+        delete: no
+        recursive: yes
+
+    - name: Set the owner ship of the service directory
+      become: yes
+      file:
+        path: /home/service/service
+        owner: service
+        group: service
+
+    - name: Create the data directory
+      become: yes
+      file:
+        path: /home/service/service/data
+        owner: service
+        group: service
+        state: directory
+
+    - name: Run the docker compose stack
+      shell: su service -c "docker compose up -d --build"
+      args:
+        chdir: /home/service/service

@@ -1,0 +1,60 @@
+services:
+  ipfs:
+    image: ipfs/go-ipfs:latest
+    ports:
+      - "4001"  # IPFS swarm
+      - "8080"  # IPFS gateway
+      - "5001"  # IPFS API
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - nginx
+
+  # TODO: re-enable generally when arm64 is supported
+  # thumbs-up-http:
+  #   image: amiller68/thumbs-up-http:latest
+  #   ports:
+  #     - "3000"
+  #   volumes:
+  #     - ./data:/app/data
+  #   environment:
+  #     - listen_addr=0.0.0.0
+  #     - listen_port=3000
+  #     - pem_data_path=/app/data/pems
+  #     - allowed_audiences=leaky-server
+  #   networks:
+  #     - nginx
+
+  leaky:
+    build:
+      context: .
+      dockerfile: Dockerfile 
+    ports:
+      - "3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - LISTEN_ADDR=0.0.0.0:3000
+      - SQLITE_DATABASE_URL=sqlite:///app/data/server.db
+      - IPFS_RPC_URL=http://ipfs:5001
+    networks:
+      - nginx
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - ipfs
+      - leaky
+    networks:
+      - nginx
+
+networks:
+  nginx:
+    driver: bridge
+
+volumes:
+  ipfs_data:
