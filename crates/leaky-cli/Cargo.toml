@@ -33,7 +33,5 @@ time = "0.3.34"
 tokio = { version = "1.10.0", features = ["full"] }
 url = { version = "^2", features = ["serde"] }
 async-trait = "0.1.81"
-# Make sure other dependencies use BoringSSL or a compatible TLS backend
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
-openssl-sys = { version = "0.9.103", features = ["vendored"] }
-openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+ring = "0.17.0"

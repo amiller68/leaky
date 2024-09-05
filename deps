@@ -1,0 +1,592 @@
+base64 v0.13.1
+└── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe)
+    └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common)
+        ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+        └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+
+base64 v0.21.7
+├── headers v0.4.0
+│   └── axum-extra v0.9.3
+│       └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── reqwest v0.11.27
+│   └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+└── rustls-pemfile v1.0.4
+    └── reqwest v0.11.27 (*)
+
+base64 v0.22.1
+└── reqwest v0.12.7
+    └── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+
+bitflags v1.3.2
+└── system-configuration v0.5.1
+    └── reqwest v0.11.27 (*)
+
+bitflags v2.6.0
+├── bindgen v0.68.1
+│   [build-dependencies]
+│   └── boring-sys v4.9.1
+│       └── boring v4.9.1
+│           └── jwt-simple v0.12.10
+│               └── thumbs-up v0.0.0 (https://github.com/amiller68/thumbs-up.git#20145991)
+│                   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│                   └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+├── boring v4.9.1 (*)
+├── openssl v0.10.66
+│   └── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+├── pulldown-cmark v0.12.1
+│   └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── rustix v0.38.35
+│   └── tempfile v3.12.0
+│       ├── native-tls v0.2.12
+│       │   ├── hyper-tls v0.5.0
+│       │   │   ├── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│       │   │   └── reqwest v0.11.27 (*)
+│       │   ├── reqwest v0.11.27 (*)
+│       │   └── tokio-native-tls v0.3.1
+│       │       ├── hyper-tls v0.5.0 (*)
+│       │       └── reqwest v0.11.27 (*)
+│       └── sqlx-macros-core v0.7.4
+│           └── sqlx-macros v0.7.4 (proc-macro)
+│               └── sqlx v0.7.4
+│                   └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── security-framework v2.11.1
+│   └── native-tls v0.2.12 (*)
+└── tower-http v0.5.2
+    └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+
+cid v0.10.1
+└── libipld-core v0.16.0
+    ├── libipld v0.16.0
+    │   └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+    ├── libipld-cbor v0.16.0
+    │   └── libipld v0.16.0 (*)
+    ├── libipld-json v0.16.0
+    │   └── libipld v0.16.0 (*)
+    ├── libipld-macro v0.16.0
+    │   └── libipld v0.16.0 (*)
+    └── libipld-pb v0.16.0
+        └── libipld v0.16.0 (*)
+
+cid v0.11.1
+├── ipld-core v0.4.1
+│   ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│   └── serde_ipld_dagcbor v0.6.1
+│       ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│       └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+└── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+
+data-encoding v2.6.0
+└── data-encoding-macro-internal v0.1.13 (proc-macro)
+    └── data-encoding-macro v0.1.15
+        └── multibase v0.9.1
+            ├── cid v0.10.1 (*)
+            ├── cid v0.11.1 (*)
+            ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe)
+            │   └── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+            ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+            ├── libipld-core v0.16.0 (*)
+            └── multiaddr v0.17.1
+                └── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+
+data-encoding v2.6.0
+├── data-encoding-macro v0.1.15 (*)
+├── multiaddr v0.17.1 (*)
+└── multibase v0.9.1 (*)
+
+deranged v0.3.11
+└── time v0.3.36
+    ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+    ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+    ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+    ├── sqlx-core v0.7.4
+    │   ├── sqlx v0.7.4 (*)
+    │   ├── sqlx-macros v0.7.4 (proc-macro) (*)
+    │   ├── sqlx-macros-core v0.7.4 (*)
+    │   ├── sqlx-sqlite v0.7.4
+    │   │   └── sqlx v0.7.4 (*)
+    │   └── sqlx-sqlite v0.7.4
+    │       └── sqlx-macros-core v0.7.4 (*)
+    ├── sqlx-sqlite v0.7.4 (*)
+    ├── tracing-appender v0.2.3
+    │   └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+    └── tracing-subscriber v0.3.18
+        ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+        └── tracing-appender v0.2.3 (*)
+
+deranged v0.3.11
+└── time v0.3.36
+    └── sqlx-sqlite v0.7.4 (*)
+
+foreign-types v0.3.2
+└── openssl v0.10.66 (*)
+
+foreign-types v0.5.0
+└── boring v4.9.1 (*)
+
+foreign-types-shared v0.1.1
+└── foreign-types v0.3.2 (*)
+
+foreign-types-shared v0.3.1
+└── foreign-types v0.5.0 (*)
+
+futures-channel v0.3.30
+├── futures v0.3.30
+│   ├── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── futures-util v0.3.30
+│   ├── axum v0.7.5
+│   │   ├── axum-extra v0.9.3 (*)
+│   │   └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│   ├── axum-core v0.4.3
+│   │   ├── axum v0.7.5 (*)
+│   │   └── axum-extra v0.9.3 (*)
+│   ├── axum-extra v0.9.3 (*)
+│   ├── common-multipart-rfc7578 v0.6.0
+│   │   ├── hyper-multipart-rfc7578 v0.8.0
+│   │   │   └── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   │   └── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   ├── futures v0.3.30 (*)
+│   ├── futures-executor v0.3.30
+│   │   ├── futures v0.3.30 (*)
+│   │   ├── sqlx-sqlite v0.7.4 (*)
+│   │   └── sqlx-sqlite v0.7.4 (*)
+│   ├── h2 v0.3.26
+│   │   ├── hyper v0.14.30
+│   │   │   ├── hyper-multipart-rfc7578 v0.8.0 (*)
+│   │   │   ├── hyper-tls v0.5.0 (*)
+│   │   │   ├── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   │   │   └── reqwest v0.11.27 (*)
+│   │   └── reqwest v0.11.27 (*)
+│   ├── http-body-util v0.1.2
+│   │   ├── axum v0.7.5 (*)
+│   │   ├── axum-core v0.4.3 (*)
+│   │   ├── axum-extra v0.9.3 (*)
+│   │   ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│   │   ├── reqwest v0.12.7 (*)
+│   │   └── tower-http v0.5.2 (*)
+│   ├── hyper v0.14.30 (*)
+│   ├── hyper v1.4.1
+│   │   ├── axum v0.7.5 (*)
+│   │   ├── hyper-util v0.1.7
+│   │   │   ├── axum v0.7.5 (*)
+│   │   │   └── reqwest v0.12.7 (*)
+│   │   ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│   │   └── reqwest v0.12.7 (*)
+│   ├── hyper-util v0.1.7 (*)
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│   ├── reqwest v0.11.27 (*)
+│   ├── reqwest v0.12.7 (*)
+│   ├── sqlx-core v0.7.4 (*)
+│   ├── sqlx-sqlite v0.7.4 (*)
+│   ├── tower v0.4.13
+│   │   ├── axum v0.7.5 (*)
+│   │   ├── axum-extra v0.9.3 (*)
+│   │   ├── hyper-util v0.1.7 (*)
+│   │   ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│   │   └── tower-http v0.5.2 (*)
+│   └── tower-http v0.5.2 (*)
+├── hyper v0.14.30 (*)
+├── hyper v1.4.1 (*)
+├── hyper-util v0.1.7 (*)
+├── sqlx-core v0.7.4 (*)
+└── sqlx-sqlite v0.7.4 (*)
+
+futures-channel v0.3.30
+└── sqlx-sqlite v0.7.4 (*)
+
+futures-sink v0.3.30
+├── flume v0.11.0
+│   ├── sqlx-sqlite v0.7.4 (*)
+│   └── sqlx-sqlite v0.7.4 (*)
+├── futures-channel v0.3.30 (*)
+└── futures-util v0.3.30
+    └── sqlx-sqlite v0.7.4 (*)
+
+futures-sink v0.3.30
+├── futures v0.3.30 (*)
+├── futures-channel v0.3.30 (*)
+├── futures-util v0.3.30 (*)
+├── h2 v0.3.26 (*)
+└── tokio-util v0.7.11
+    ├── h2 v0.3.26 (*)
+    ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+    ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+    ├── tower v0.4.13 (*)
+    └── tower-http v0.5.2 (*)
+
+futures-util v0.3.30 (*)
+
+futures-util v0.3.30 (*)
+
+heck v0.4.1
+├── axum-macros v0.4.1 (proc-macro)
+│   └── axum v0.7.5 (*)
+└── sqlx-macros-core v0.7.4 (*)
+
+heck v0.5.0
+└── clap_derive v4.5.13 (proc-macro)
+    └── clap v4.5.16
+        ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+        └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+
+http v0.2.12
+├── common-multipart-rfc7578 v0.6.0 (*)
+├── h2 v0.3.26 (*)
+├── http-body v0.4.6
+│   ├── hyper v0.14.30 (*)
+│   └── reqwest v0.11.27 (*)
+├── hyper v0.14.30 (*)
+├── hyper-multipart-rfc7578 v0.8.0 (*)
+├── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+└── reqwest v0.11.27 (*)
+
+http v1.1.0
+├── axum v0.7.5 (*)
+├── axum-core v0.4.3 (*)
+├── axum-extra v0.9.3 (*)
+├── headers v0.4.0 (*)
+├── headers-core v0.3.0
+│   └── headers v0.4.0 (*)
+├── http-body v1.0.1
+│   ├── axum v0.7.5 (*)
+│   ├── axum-core v0.4.3 (*)
+│   ├── axum-extra v0.9.3 (*)
+│   ├── http-body-util v0.1.2 (*)
+│   ├── hyper v1.4.1 (*)
+│   ├── hyper-util v0.1.7 (*)
+│   ├── reqwest v0.12.7 (*)
+│   └── tower-http v0.5.2 (*)
+├── http-body-util v0.1.2 (*)
+├── hyper v1.4.1 (*)
+├── hyper-util v0.1.7 (*)
+├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── reqwest v0.12.7 (*)
+└── tower-http v0.5.2 (*)
+
+http-body v0.4.6 (*)
+
+http-body v1.0.1 (*)
+
+hyper v0.14.30 (*)
+
+hyper v1.4.1 (*)
+
+multihash v0.17.0
+└── multiaddr v0.17.1 (*)
+
+multihash v0.18.1
+├── cid v0.10.1 (*)
+├── libipld v0.16.0 (*)
+├── libipld-core v0.16.0 (*)
+└── libipld-json v0.16.0 (*)
+
+multihash v0.19.1
+└── cid v0.11.1 (*)
+
+regex v1.10.6
+├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+└── tracing-subscriber v0.3.18 (*)
+
+regex v1.10.6
+└── bindgen v0.68.1 (*)
+
+regex-automata v0.1.10
+└── matchers v0.1.0
+    └── tracing-subscriber v0.3.18 (*)
+
+regex-automata v0.4.7
+└── regex v1.10.6 (*)
+
+regex-automata v0.4.7
+└── regex v1.10.6 (*)
+
+regex-syntax v0.6.29
+└── regex-automata v0.1.10 (*)
+
+regex-syntax v0.8.4
+├── regex v1.10.6 (*)
+└── regex-automata v0.4.7 (*)
+
+regex-syntax v0.8.4
+├── regex v1.10.6 (*)
+└── regex-automata v0.4.7 (*)
+
+reqwest v0.11.27 (*)
+
+reqwest v0.12.7 (*)
+
+serde v1.0.209
+├── axum v0.7.5 (*)
+├── axum-extra v0.9.3 (*)
+├── bincode v1.3.3
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+├── blake3 v1.5.4
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│   ├── multihash v0.18.1 (*)
+│   └── thumbs-up v0.0.0 (https://github.com/amiller68/thumbs-up.git#20145991) (*)
+├── cbor4ii v0.2.14
+│   └── serde_ipld_dagcbor v0.6.1 (*)
+├── chrono v0.4.38
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│   └── thumbs-up v0.0.0 (https://github.com/amiller68/thumbs-up.git#20145991) (*)
+├── cid v0.10.1 (*)
+├── cid v0.11.1 (*)
+├── deranged v0.3.11 (*)
+├── either v1.13.0
+│   ├── sqlx-core v0.7.4 (*)
+│   └── sqlx-macros-core v0.7.4 (*)
+├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+├── ipld-core v0.4.1 (*)
+├── jwt-simple v0.12.10 (*)
+├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── libipld-core v0.16.0 (*)
+├── libipld-json v0.16.0 (*)
+├── multiaddr v0.17.1 (*)
+├── multihash v0.18.1 (*)
+├── multihash v0.19.1 (*)
+├── reqwest v0.11.27 (*)
+├── reqwest v0.12.7 (*)
+├── serde-big-array v0.3.3
+│   └── multihash v0.18.1 (*)
+├── serde_bytes v0.11.15
+│   ├── cid v0.10.1 (*)
+│   ├── cid v0.11.1 (*)
+│   └── ipld-core v0.4.1 (*)
+├── serde_ipld_dagcbor v0.6.1 (*)
+├── serde_json v1.0.127
+│   ├── axum v0.7.5 (*)
+│   ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   ├── jwt-simple v0.12.10 (*)
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│   ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│   ├── libipld-json v0.16.0 (*)
+│   ├── reqwest v0.11.27 (*)
+│   ├── reqwest v0.12.7 (*)
+│   └── sqlx-core v0.7.4 (*)
+├── serde_path_to_error v0.1.16
+│   └── axum v0.7.5 (*)
+├── serde_urlencoded v0.7.1
+│   ├── axum v0.7.5 (*)
+│   ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   ├── reqwest v0.11.27 (*)
+│   └── reqwest v0.12.7 (*)
+├── serde_with v3.9.0
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+├── sqlx-core v0.7.4 (*)
+├── sqlx-sqlite v0.7.4 (*)
+├── thumbs-up v0.0.0 (https://github.com/amiller68/thumbs-up.git#20145991) (*)
+├── time v0.3.36 (*)
+├── url v2.5.2
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│   ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│   ├── multiaddr v0.17.1 (*)
+│   ├── reqwest v0.11.27 (*)
+│   ├── reqwest v0.12.7 (*)
+│   ├── sqlx-core v0.7.4 (*)
+│   └── sqlx-sqlite v0.7.4 (*)
+└── uuid v1.10.0
+    ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+    ├── sqlx-core v0.7.4 (*)
+    └── sqlx-sqlite v0.7.4 (*)
+
+serde v1.0.209
+├── serde_json v1.0.127
+│   └── sqlx-macros-core v0.7.4 (*)
+├── sqlx-macros-core v0.7.4 (*)
+├── sqlx-sqlite v0.7.4 (*)
+└── toml v0.5.11
+    └── proc-macro-crate v1.1.3
+        ├── libipld-cbor-derive v0.16.0 (proc-macro)
+        │   └── libipld v0.16.0 (*)
+        └── multihash-derive v0.8.1 (proc-macro)
+            ├── multihash v0.17.0 (*)
+            └── multihash v0.18.1 (*)
+
+serde_json v1.0.127 (*)
+
+serde_json v1.0.127 (*)
+
+sqlx-sqlite v0.7.4 (*)
+
+sqlx-sqlite v0.7.4 (*)
+
+syn v1.0.109
+├── data-encoding-macro-internal v0.1.13 (proc-macro) (*)
+├── libipld-cbor-derive v0.16.0 (proc-macro) (*)
+├── multihash-derive v0.8.1 (proc-macro) (*)
+├── proc-macro-error v1.0.4
+│   └── multihash-derive v0.8.1 (proc-macro) (*)
+├── sqlx-macros v0.7.4 (proc-macro) (*)
+├── sqlx-macros-core v0.7.4 (*)
+└── synstructure v0.12.6
+    ├── libipld-cbor-derive v0.16.0 (proc-macro) (*)
+    └── multihash-derive v0.8.1 (proc-macro) (*)
+
+syn v2.0.77
+├── async-recursion v1.1.1 (proc-macro)
+│   ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│   └── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+├── async-trait v0.1.82 (proc-macro)
+│   ├── axum v0.7.5 (*)
+│   ├── axum-core v0.4.3 (*)
+│   ├── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│   └── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+├── axum-macros v0.4.1 (proc-macro) (*)
+├── bindgen v0.68.1 (*)
+├── clap_derive v4.5.13 (proc-macro) (*)
+├── darling_core v0.20.10
+│   ├── darling v0.20.10
+│   │   └── serde_with_macros v3.9.0 (proc-macro)
+│   │       └── serde_with v3.9.0 (*)
+│   └── darling_macro v0.20.10 (proc-macro)
+│       └── darling v0.20.10 (*)
+├── darling_macro v0.20.10 (proc-macro) (*)
+├── foreign-types-macros v0.2.3 (proc-macro)
+│   └── foreign-types v0.5.0 (*)
+├── futures-macro v0.3.30 (proc-macro)
+│   └── futures-util v0.3.30 (*)
+├── openssl-macros v0.1.1 (proc-macro)
+│   └── openssl v0.10.66 (*)
+├── pin-project-internal v1.1.5 (proc-macro)
+│   └── pin-project v1.1.5
+│       ├── tower v0.4.13 (*)
+│       └── tracing-futures v0.2.5
+│           └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── serde_derive v1.0.209 (proc-macro)
+│   ├── serde v1.0.209 (*)
+│   ├── serde v1.0.209 (*)
+│   └── serde_with v3.9.0 (*)
+├── serde_with_macros v3.9.0 (proc-macro) (*)
+├── thiserror-impl v1.0.63 (proc-macro)
+│   └── thiserror v1.0.63
+│       ├── common-multipart-rfc7578 v0.6.0 (*)
+│       ├── ipfs-api-backend-hyper v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│       ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│       ├── jwt-simple v0.12.10 (*)
+│       ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│       ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│       ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│       ├── libipld v0.16.0 (*)
+│       ├── libipld-cbor v0.16.0 (*)
+│       ├── libipld-core v0.16.0 (*)
+│       ├── libipld-pb v0.16.0 (*)
+│       ├── proc-macro-crate v1.1.3 (*)
+│       ├── sqlx-core v0.7.4 (*)
+│       ├── thumbs-up v0.0.0 (https://github.com/amiller68/thumbs-up.git#20145991) (*)
+│       └── tracing-appender v0.2.3 (*)
+├── tokio-macros v2.4.0 (proc-macro)
+│   └── tokio v1.40.0
+│       ├── axum v0.7.5 (*)
+│       ├── h2 v0.3.26 (*)
+│       ├── hyper v0.14.30 (*)
+│       ├── hyper v1.4.1 (*)
+│       ├── hyper-tls v0.5.0 (*)
+│       ├── hyper-util v0.1.7 (*)
+│       ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│       ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+│       ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+│       ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│       ├── reqwest v0.11.27 (*)
+│       ├── reqwest v0.12.7 (*)
+│       ├── sqlx-core v0.7.4 (*)
+│       ├── tokio-native-tls v0.3.1 (*)
+│       ├── tokio-stream v0.1.15
+│       │   └── sqlx-core v0.7.4 (*)
+│       ├── tokio-util v0.7.11 (*)
+│       ├── tower v0.4.13 (*)
+│       └── tower-http v0.5.2 (*)
+├── tracing-attributes v0.1.27 (proc-macro)
+│   └── tracing v0.1.40
+│       ├── axum v0.7.5 (*)
+│       ├── axum-core v0.4.3 (*)
+│       ├── axum-extra v0.9.3 (*)
+│       ├── h2 v0.3.26 (*)
+│       ├── hyper v0.14.30 (*)
+│       ├── hyper-util v0.1.7 (*)
+│       ├── ipfs-api-prelude v0.6.0 (https://github.com/amiller68/rust-ipfs-api#24629afe) (*)
+│       ├── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+│       ├── sqlx-core v0.7.4 (*)
+│       ├── sqlx-sqlite v0.7.4 (*)
+│       ├── sqlx-sqlite v0.7.4 (*)
+│       ├── tower v0.4.13 (*)
+│       ├── tower-http v0.5.2 (*)
+│       ├── tracing-futures v0.2.5 (*)
+│       └── tracing-subscriber v0.3.18 (*)
+├── wasm-bindgen-backend v0.2.93
+│   └── wasm-bindgen-macro-support v0.2.93
+│       └── wasm-bindgen-macro v0.2.93 (proc-macro)
+│           └── wasm-bindgen v0.2.93
+│               └── console_error_panic_hook v0.1.7
+│                   └── leaky-server v0.0.0 (/Users/al/krondor/leaky/crates/leaky-server)
+├── wasm-bindgen-macro-support v0.2.93 (*)
+└── zerocopy-derive v0.7.35 (proc-macro)
+    └── zerocopy v0.7.35
+        ├── ahash v0.8.11
+        │   ├── hashbrown v0.14.5
+        │   │   ├── hashlink v0.8.4
+        │   │   │   └── sqlx-core v0.7.4 (*)
+        │   │   └── indexmap v2.5.0
+        │   │       ├── h2 v0.3.26 (*)
+        │   │       └── sqlx-core v0.7.4 (*)
+        │   └── sqlx-core v0.7.4 (*)
+        └── ppv-lite86 v0.2.20
+            └── rand_chacha v0.3.1
+                └── rand v0.8.5
+                    ├── common-multipart-rfc7578 v0.6.0 (*)
+                    ├── jwt-simple v0.12.10 (*)
+                    ├── leaky-cli v0.1.0 (/Users/al/krondor/leaky/crates/leaky-cli)
+                    ├── leaky-common v0.1.0 (/Users/al/krondor/leaky/crates/leaky-common) (*)
+                    └── thumbs-up v0.0.0 (https://github.com/amiller68/thumbs-up.git#20145991) (*)
+
+sync_wrapper v0.1.2
+├── axum-core v0.4.3 (*)
+└── reqwest v0.11.27 (*)
+
+sync_wrapper v1.0.1
+├── axum v0.7.5 (*)
+└── reqwest v0.12.7 (*)
+
+time v0.3.36 (*)
+
+time v0.3.36 (*)
+
+tokio v1.40.0 (*)
+
+tokio v1.40.0
+└── sqlx-macros-core v0.7.4 (*)
+
+unsigned-varint v0.7.2
+├── cid v0.10.1 (*)
+├── multiaddr v0.17.1 (*)
+├── multihash v0.17.0 (*)
+├── multihash v0.18.1 (*)
+└── multihash v0.19.1 (*)
+
+unsigned-varint v0.8.0
+└── cid v0.11.1 (*)
+
+url v2.5.2
+├── sqlx-macros-core v0.7.4 (*)
+└── sqlx-sqlite v0.7.4 (*)
+
+url v2.5.2 (*)
+
+uuid v1.10.0 (*)
+
+uuid v1.10.0
+└── sqlx-sqlite v0.7.4 (*)
