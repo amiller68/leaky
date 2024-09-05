@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, Query, State, Json};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use regex::Regex;
@@ -34,7 +34,6 @@ pub async fn handler(
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
     let data_result = mount.cat(&path).await;
-    tracing::info!("GET /{}: {:?}", path.display(), data_result);
     match data_result {
         Ok(data) => {
             // TODO: i should check what the extension is and set the content type accordingly
@@ -48,21 +47,25 @@ pub async fn handler(
                 // Markdown
                 "md" => {
                     if query.html.unwrap_or(false) {
+                        tracing::info!("GET /{} | {:?} | rendering markdown as html", path.display(), query);
                         let html = markdown_to_html(data, state.get_content_forwarding_url());
                         return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html)
                             .into_response());
                     };
+                    tracing::info!("GET /{} | {:?} | returning markdown as text", path.display(), query);
                     return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data)
                         .into_response());
                 }
                 // Images
                 "png" | "jpg" | "jpeg" | "gif" => {
+                    tracing::info!("GET /{} | {:?} | returning image", path.display(), query);
                     return Ok(
                         (http::StatusCode::OK, [(CONTENT_TYPE, "image")], data).into_response()
                     );
                 }
                 // All other files
                 _ => {
+                    tracing::info!("GET /{} | {:?} | returning misc file", path.display(), query);
                     return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data)
                         .into_response());
                 }
@@ -72,15 +75,26 @@ pub async fn handler(
         Err(e) => return Err(GetContentError::Mount(e)),
     }
 
+    
     let ls_result = mount.ls(&path).await;
     let ls = match ls_result {
-        Ok(ls) => ls,
-        Err(MountError::PathNotDir(_)) => return Err(GetContentError::NotFound),
+        Ok(ls) => {
+            if ls.is_empty() {
+                tracing::info!("GET /{} | {:?} | returning 404 - empty dir", path.display(), query);
+                return Err(GetContentError::NotFound)
+            }
+            ls
+        },
+        Err(MountError::PathNotDir(_)) => {
+            tracing::info!("GET /{} | {:?} | returning 404 - not path", path.display(), query);
+            return Err(GetContentError::NotFound)
+        },
         Err(e) => return Err(GetContentError::Mount(e)),
     };
+    tracing::info!("GET /{} | {:?} | returning ls: {:?}", path.display(), query, ls);
     let ls_json = serde_json::to_string(&ls).unwrap();
 
-    Ok((http::StatusCode::OK, ls_json).into_response())
+    Ok((http::StatusCode::OK, Json(ls_json)).into_response())
 }
 
 #[derive(Debug, thiserror::Error)]

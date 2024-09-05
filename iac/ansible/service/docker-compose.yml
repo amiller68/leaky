@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
 
   thumbs-up-http:
-    image: amiller68/thumbs-up-http:20145991ec8250d4bd68d487a45f5b677c3e1d33
+    image: amiller68/thumbs-up-http:latest
     ports:
       - "3000"
     volumes:

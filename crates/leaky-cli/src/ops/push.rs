@@ -59,6 +59,7 @@ impl Op for Push {
             cid: cid.to_string(),
             previous_cid: previous_cid.to_string(),
         };
+        println!("Pushing root: {:?}", push_root_req);
         client.call(push_root_req).await?;
 
         let mut updates = change_log.clone();
