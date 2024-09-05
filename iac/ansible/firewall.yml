@@ -1,0 +1,109 @@
+# Setup an appropriate firewall for our services
+#  This is a monolithic configuration, it may be advisable to split out
+#   rules to service configurations
+
+- hosts: all
+  become: yes
+  name: Setup up UFW firewall for all of our services
+  tasks:
+
+    # SSH Setup
+
+    - name: Set logging
+      ufw:
+        logging: 'on'
+
+    # Sometimes it is desirable to let the sender know when traffic is
+    # being denied, rather than simply ignoring it. In these cases, use
+    # reject instead of deny. In addition, log rejected connections:
+    - name: Log rejected auth
+      ufw:
+        rule: reject
+        port: auth
+        log: true
+
+    # ufw supports connection rate limiting, which is useful for protecting
+    # against brute-force login attacks. ufw will deny connections if an IP
+    # address has attempted to initiate 6 or more connections in the last
+    # 30 seconds. See  http://www.debian-administration.org/articles/187
+    # for details.
+    - name: Rate limit ssh
+      ufw:
+        rule: limit
+        port: ssh
+        proto: tcp
+
+    # Allow OpenSSH. (Note that as ufw manages its own state, simply removing
+    # a rule=allow task can leave those ports exposed. Either use delete=true
+    # or a separate state=reset task)
+    - name: Allow SSH
+      ufw:
+        rule: allow
+        name: OpenSSH
+
+    # WebServer Setup
+
+    # INBOUND
+
+    - name: Allow Inbound Http
+      ufw:
+        rule: allow
+        direction: in
+        proto: tcp
+        port: '80'
+
+    - name: Allow Inbound Https
+      ufw:
+        rule: allow
+        direction: in
+        proto: tcp
+        port: '443'
+
+    - name: Allow Inbound Established Tcp
+      ufw:
+        rule: allow
+        direction: in
+        proto: tcp
+        port: '32768:65535'
+
+    # OUTBOUND
+
+    - name: Allow Outbound Tcp
+      ufw:
+        rule: allow
+        direction: out
+        proto: tcp
+
+    # IPFS Setup
+
+    # INBOUND
+
+    - name: Allow Inbound IPFS Swarm
+      ufw:
+        rule: allow
+        direction: in
+        proto: tcp
+        port: '4001'
+
+    - name: Allow Inbound IPFS REST API
+      ufw:
+        rule: allow
+        direction: in
+        proto: tcp
+        port: '5001'
+
+    # OUTBOUND
+
+    - name: Allow Outbound IPFS Swarm
+      ufw:
+        rule: allow
+        direction: out
+        proto: tcp
+        port: '4001'
+
+    - name: Allow Outbound IPFS REST API
+      ufw:
+        rule: allow
+        direction: out
+        proto: tcp
+        port: '5001'

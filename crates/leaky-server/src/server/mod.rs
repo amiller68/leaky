@@ -5,8 +5,8 @@ use tower_http::LatencyUnit;
 
 use crate::api;
 use crate::app::{AppState, AppStateSetupError, Config};
-use crate::health;
 use crate::content;
+use crate::health;
 
 mod error_handlers;
 

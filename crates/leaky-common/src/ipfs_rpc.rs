@@ -124,7 +124,6 @@ impl IpfsRpc {
         Ok(result)
     }
 
-
     // NOTE: had to wrap the client call in a spawn_blocking because the client doesn't implement Send
     pub async fn put_block<R>(
         &self,

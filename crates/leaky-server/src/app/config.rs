@@ -11,6 +11,11 @@ pub struct Config {
     // Listen address
     listen_addr: SocketAddr,
 
+    // TODO: there's prolly a way to do this with headers
+    //  but for now we'll just make it a config option
+    /// Get Content Forwarding Url
+    get_content_forwarding_url: Url,
+
     // Database Config
     sqlite_database_url: Url,
 
@@ -36,6 +41,15 @@ impl Config {
         };
         let listen_addr = listen_addr_str.parse()?;
 
+        let get_content_forwarding_url_str = match env::var("GET_CONTENT_FORWARDING_URL") {
+            Ok(url) => url,
+            Err(_e) => {
+                tracing::warn!("No GET_CONTENT_FORWARDING_URL found in .env. Using default");
+                "http://localhost:3000/content".to_string()
+            }
+        };
+        let get_content_forwarding_url = Url::parse(&get_content_forwarding_url_str)?;
+
         let sqlite_database_url_str = match env::var("SQLITE_DATABASE_URL") {
             Ok(url) => url,
             Err(_e) => {
@@ -49,7 +63,7 @@ impl Config {
             Ok(url) => url,
             Err(_e) => {
                 tracing::warn!("No IPFS_API_URL found in .env");
-                "http://localhost:3001".to_string()
+                "http://localhost:3000".to_string()
             }
         };
         let ipfs_rpc_url = Url::parse(&ipfs_rpc_url_str)?;
@@ -71,6 +85,7 @@ impl Config {
 
         Ok(Config {
             listen_addr,
+            get_content_forwarding_url,
             sqlite_database_url,
             ipfs_rpc_url,
             log_level,
@@ -91,6 +106,10 @@ impl Config {
 
     pub fn listen_addr(&self) -> &SocketAddr {
         &self.listen_addr
+    }
+
+    pub fn get_content_forwarding_url(&self) -> &Url {
+        &self.get_content_forwarding_url
     }
 }
 

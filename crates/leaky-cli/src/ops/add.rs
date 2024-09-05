@@ -6,8 +6,8 @@ use async_trait::async_trait;
 
 use leaky_common::prelude::*;
 
-use crate::{AppState, Op};
 use crate::change_log::ChangeType;
+use crate::{AppState, Op};
 
 use super::diff::{diff, DiffError};
 

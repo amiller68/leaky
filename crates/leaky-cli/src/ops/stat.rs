@@ -21,11 +21,10 @@ impl Op for Stat {
     type Output = Cid;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
-        let mut client = state.client()?;
         let cid = state.cid().clone();
         let previous_cid = state.previous_cid().clone();
         let change_log = state.change_log().clone();
-        
+
         println!("cid: {:?}", cid);
         println!("previousd cid: {:?}", previous_cid);
         println!("changes: {:?}", change_log);

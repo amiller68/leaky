@@ -1,14 +1,9 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
 use leaky_common::prelude::*;
 
 use fs_tree::FsTree;
-use serde::{Deserialize, Serialize};
-use url::Url;
-
-use crate::change_log::ChangeLog;
 
 pub const DEFAULT_LOCAL_DIR: &str = ".leaky";
 pub const DEFAULT_CONFIG_NAME: &str = "leaky.conf";

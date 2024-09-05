@@ -15,7 +15,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .allow_credentials(false);
 
     Router::new()
-        .nest("/root", root::router(state.clone()))    
+        .nest("/root", root::router(state.clone()))
         .with_state(state)
         .layer(cors_layer)
 }

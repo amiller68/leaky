@@ -1,0 +1,4 @@
+# Note: Order is important in this file, the last matching pattern has the most precedence.
+
+# By default allow any internal-engineers team member to approve PRs
+*               @amiller68

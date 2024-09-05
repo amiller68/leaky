@@ -1,11 +1,11 @@
 use std::error::Error;
-use std::fmt::Display;
 
 use clap::Subcommand;
 use std::path::PathBuf;
 
 use super::ops::Add as AddOp;
 use super::ops::Init as InitOp;
+use super::ops::Key as KeyOp;
 use super::ops::Pull as PullOp;
 use super::ops::Push as PushOp;
 use super::ops::Stat as StatOp;
@@ -18,7 +18,7 @@ use std::fmt;
 #[async_trait::async_trait]
 pub trait Op: Send + Sync {
     type Error: Error + Send + Sync + 'static;
-    type Output: Display;
+    type Output;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error>;
 }
@@ -81,19 +81,28 @@ command_enum! {
     (Add, AddOp),
     (Pull, PullOp),
     (Push, PushOp),
-    (Stat, StatOp)
+    (Stat, StatOp),
+    (Key, KeyOp),
     // Define more commands here
 }
 
 impl fmt::Display for OpOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            OpOutput::Init(cid) => write!(f, "{}", cid),
+            OpOutput::Init((cid, path)) => write!(
+                f,
+                r#"
+                Remote initialized with cid: {} \n
+                Please register the following public key with the remote: {}
+            "#,
+                cid,
+                path.display()
+            ),
             OpOutput::Add(cid) => write!(f, "{}", cid),
             OpOutput::Pull(cid) => write!(f, "{}", cid),
             OpOutput::Push(cid) => write!(f, "{}", cid),
-            OpOutput::Stat(cid) => write!(f, "{}", cid)
-            // Define more outputs here
+            OpOutput::Stat(cid) => write!(f, "{}", cid), // Define more outputs here
+            OpOutput::Key(string) => write!(f, "{}", string),
         }
     }
 }

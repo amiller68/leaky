@@ -12,7 +12,7 @@ use super::error::ApiError;
 use crate::ipfs_rpc::IpfsRpc;
 
 /// The audience for the API token
-const AUDIENCE: &str = "leaky";
+const AUDIENCE: &str = "leaky-server";
 
 #[derive(Debug, Clone)]
 /// ApiClient for interacting with our API

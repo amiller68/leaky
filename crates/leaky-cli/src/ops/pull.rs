@@ -58,7 +58,7 @@ impl Op for Pull {
             .iter()
             .map(|(path, cid)| (path.strip_prefix("/").unwrap().to_path_buf(), *cid))
             .collect::<Vec<_>>();
-        
+
         // Insert everything in the change log
         let mut change_log = ChangeLog::new();
         for (path, cid) in pulled_items.iter() {

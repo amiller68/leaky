@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 
 use axum::extract::FromRef;
+use url::Url;
 
 use leaky_common::prelude::*;
 
@@ -9,12 +10,17 @@ use crate::database::Database;
 
 #[derive(Clone)]
 pub struct AppState {
+    get_content_forwarding_url: Url,
     sqlite_database: Database,
     ipfs_rpc: IpfsRpc,
 }
 
 #[allow(dead_code)]
 impl AppState {
+    pub fn get_content_forwarding_url(&self) -> &Url {
+        &self.get_content_forwarding_url
+    }
+
     pub fn sqlite_database(&self) -> &Database {
         &self.sqlite_database
     }
@@ -28,6 +34,7 @@ impl AppState {
         let ipfs_rpc = IpfsRpc::try_from(config.ipfs_rpc_url().clone())?;
 
         Ok(Self {
+            get_content_forwarding_url: config.get_content_forwarding_url().clone(),
             sqlite_database,
             ipfs_rpc,
         })

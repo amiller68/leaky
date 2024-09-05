@@ -41,7 +41,7 @@ impl Op for Push {
         let mut client = state.client()?;
         let cid = state.cid().clone();
         let previous_cid = state.previous_cid().clone();
-        
+
         if cid == previous_cid {
             println!("No changes to push");
             return Ok(cid);

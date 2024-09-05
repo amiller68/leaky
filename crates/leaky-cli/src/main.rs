@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![warn(missing_docs)]
 
 use std::convert::TryFrom;
 

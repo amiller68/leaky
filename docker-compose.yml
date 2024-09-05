@@ -10,11 +10,26 @@ services:
     networks:
       - nginx
 
+  # TODO: re-enable generally when arm64 is supported
+  # thumbs-up-http:
+  #   image: amiller68/thumbs-up-http:latest
+  #   ports:
+  #     - "3000"
+  #   volumes:
+  #     - ./data:/app/data
+  #   environment:
+  #     - listen_addr=0.0.0.0
+  #     - listen_port=3000
+  #     - pem_data_path=/app/data/pems
+  #     - allowed_audiences=leaky-server
+  #   networks:
+  #     - nginx
+
   leaky:
     build:
       context: .
       dockerfile: Dockerfile 
-    expose:
+    ports:
       - "3000"
     volumes:
       - ./data:/app/data

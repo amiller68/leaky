@@ -1,0 +1,66 @@
+services:
+  ipfs:
+    image: ipfs/go-ipfs:latest
+    ports:
+      - "4001"  # IPFS swarm
+      - "8080"  # IPFS gateway
+      - "5001"  # IPFS API
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - nginx
+
+  thumbs-up-http:
+    image: amiller68/thumbs-up-http:latest
+    ports:
+      - "3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - listen_addr=0.0.0.0
+      - listen_port=3000
+      - pem_data_path=/app/data/pems
+      - allowed_audiences=leaky-server
+    networks:
+      - swag_net
+
+  # TODO: connect to the real deployed image
+  leaky:
+    image: amiller68/leaky-server:latest
+    ports:
+      - "3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - LISTEN_ADDR=0.0.0.0:3000
+      - SQLITE_DATABASE_URL=sqlite:///app/data/server.db
+      - IPFS_RPC_URL=http://ipfs:5001
+    networks:
+      - swag_net
+
+  swag:
+    image: ghcr.io/linuxserver/swag
+    container_name: swag
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - URL=leaky.krondor.org
+      - VALIDATION=http
+      - CERTPROVIDER=letsencrypt
+      - EMAIL=al@krondor.org
+    volumes:
+      - ./config:/config
+    ports:
+      - 443:443
+      - 80:80
+    restart: unless-stopped
+
+volumes:
+  ipfs_data:
+
+networks:
+  default:
+    name: swag_net
