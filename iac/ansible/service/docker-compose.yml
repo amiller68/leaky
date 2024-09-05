@@ -7,8 +7,7 @@ services:
       - "5001"  # IPFS API
     volumes:
       - ipfs_data:/data/ipfs
-    networks:
-      - nginx
+    restart: unless-stopped
 
   thumbs-up-http:
     image: amiller68/thumbs-up-http:latest
@@ -17,12 +16,11 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - listen_addr=0.0.0.0
-      - listen_port=3000
-      - pem_data_path=/app/data/pems
-      - allowed_audiences=leaky-server
-    networks:
-      - swag_net
+      - LISTEN_PORT=3000
+      - LISTEN_ADDR=0.0.0.0
+      - PEM_DATA_PATH=/app/data/pems
+      - ALLOWED_AUDIENCES=leaky-server
+    restart: unless-stopped
 
   # TODO: connect to the real deployed image
   leaky:
@@ -35,8 +33,7 @@ services:
       - LISTEN_ADDR=0.0.0.0:3000
       - SQLITE_DATABASE_URL=sqlite:///app/data/server.db
       - IPFS_RPC_URL=http://ipfs:5001
-    networks:
-      - swag_net
+    restart: unless-stopped
 
   swag:
     image: ghcr.io/linuxserver/swag

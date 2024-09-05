@@ -33,7 +33,7 @@
     - name: Create the data directory
       become: yes
       file:
-        path: /home/service/service/data
+        path: /home/service/service/data/pems
         owner: service
         group: service
         state: directory
