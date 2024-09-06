@@ -55,11 +55,10 @@ pub async fn handler(
                         let base_path = path.parent();
                         let empty_path = PathBuf::new();
                         let base_path = base_path.unwrap_or(&empty_path);
-                        let html = markdown_to_html(
-                            data,
-                            &base_path.to_path_buf(),
-                            &state.get_content_forwarding_url().join("content").unwrap(),
-                        );
+                        let get_content_url =
+                            state.get_content_forwarding_url().join("content").unwrap();
+                        let html =
+                            markdown_to_html(data, &base_path.to_path_buf(), &get_content_url);
 
                         return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html)
                             .into_response());
@@ -183,6 +182,7 @@ pub fn markdown_to_html(data: Vec<u8>, base_path: &PathBuf, get_content_url: &Ur
             let path = PathBuf::from(cap.as_str());
             let path = normalize_path(base_path.join(path));
             let url = get_content_url.join(path.to_str().unwrap()).unwrap();
+            tracing::info!("replacing {} with {}", cap.as_str(), url);
             let old = format!(r#"src="./{}""#, cap.as_str());
             let new = format!(r#"src="{}""#, url);
             result = result.replace(&old, &new);
