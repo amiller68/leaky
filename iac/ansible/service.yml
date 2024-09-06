@@ -38,7 +38,13 @@
         group: service
         state: directory
 
-    - name: Run the docker compose stack
-      shell: su service -c "docker compose up -d --build"
+    - name: Pull the latest leaky-server
+      shell: su service -c "docker pull amiller68/leaky-server:latest"
       args:
         chdir: /home/service/service
+
+    - name: Run the docker compose stack
+      shell: su service -c "docker compose up -d --remove-orphans"
+      args:
+        chdir: /home/service/service
+
