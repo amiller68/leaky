@@ -54,10 +54,7 @@ impl ApiClient {
     /// * `credentials` - The credentials to use for signing
     pub fn with_credentials(&mut self, signing_key: EcKey) {
         self.bearer_token = None;
-        self.claims = Some(ApiToken::new(
-            AUDIENCE.to_string(),
-            "leaky".to_string(),
-        ));
+        self.claims = Some(ApiToken::new(AUDIENCE.to_string(), "leaky".to_string()));
         self.signing_key = Some(signing_key);
     }
 

@@ -51,7 +51,7 @@ impl Op for Init {
         if path.is_dir() && !private_key_path.exists() && !public_key_path.exists() {
             std::fs::write(private_key_path, private_key_pem)?;
             std::fs::write(public_key_path.clone(), public_key_pem)?;
-        } 
+        }
         let mut client = state.client()?;
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
 
@@ -62,7 +62,7 @@ impl Op for Init {
         let cid = mount.cid().to_string();
 
         let push_root = PushRoot { cid, previous_cid };
-        client.call(push_root).await?; 
+        client.call(push_root).await?;
 
         state.save(&mount, None, Some(*mount.cid()))?;
 

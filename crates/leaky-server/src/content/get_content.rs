@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, State, Json};
+use axum::extract::{Json, Path, Query, State};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use regex::Regex;
@@ -47,25 +47,33 @@ pub async fn handler(
                 // Markdown
                 "md" => {
                     if query.html.unwrap_or(false) {
-                        tracing::info!("GET /{} | {:?} | rendering markdown as html", path.display(), query);
+                        tracing::info!(
+                            "GET {} | {:?} | rendering markdown as html",
+                            path.display(),
+                            query
+                        );
                         let html = markdown_to_html(data, state.get_content_forwarding_url());
                         return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html)
                             .into_response());
                     };
-                    tracing::info!("GET /{} | {:?} | returning markdown as text", path.display(), query);
+                    tracing::info!(
+                        "GET {} | {:?} | returning markdown as text",
+                        path.display(),
+                        query
+                    );
                     return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data)
                         .into_response());
                 }
                 // Images
                 "png" | "jpg" | "jpeg" | "gif" => {
-                    tracing::info!("GET /{} | {:?} | returning image", path.display(), query);
+                    tracing::info!("GET {} | {:?} | returning image", path.display(), query);
                     return Ok(
                         (http::StatusCode::OK, [(CONTENT_TYPE, "image")], data).into_response()
                     );
                 }
                 // All other files
                 _ => {
-                    tracing::info!("GET /{} | {:?} | returning misc file", path.display(), query);
+                    tracing::info!("GET {} | {:?} | returning misc file", path.display(), query);
                     return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data)
                         .into_response());
                 }
@@ -75,23 +83,35 @@ pub async fn handler(
         Err(e) => return Err(GetContentError::Mount(e)),
     }
 
-    
     let ls_result = mount.ls(&path).await;
     let ls = match ls_result {
         Ok(ls) => {
             if ls.is_empty() {
-                tracing::info!("GET /{} | {:?} | returning 404 - empty dir", path.display(), query);
-                return Err(GetContentError::NotFound)
+                tracing::info!(
+                    "GET {} | {:?} | returning 404 - empty dir",
+                    path.display(),
+                    query
+                );
+                return Err(GetContentError::NotFound);
             }
             ls
-        },
+        }
         Err(MountError::PathNotDir(_)) => {
-            tracing::info!("GET /{} | {:?} | returning 404 - not path", path.display(), query);
-            return Err(GetContentError::NotFound)
-        },
+            tracing::info!(
+                "GET {} | {:?} | returning 404 - not path",
+                path.display(),
+                query
+            );
+            return Err(GetContentError::NotFound);
+        }
         Err(e) => return Err(GetContentError::Mount(e)),
     };
-    tracing::info!("GET /{} | {:?} | returning ls: {:?}", path.display(), query, ls);
+    tracing::info!(
+        "GET {} | {:?} | returning ls: {:?}",
+        path.display(),
+        query,
+        ls
+    );
     let ls_json = serde_json::to_string(&ls).unwrap();
 
     Ok((http::StatusCode::OK, Json(ls_json)).into_response())
@@ -118,11 +138,11 @@ impl IntoResponse for GetContentError {
             | GetContentError::RootCid(_)
             | GetContentError::Database(_) => {
                 tracing::error!("{:?}", self);
-                return (
+                (
                     http::StatusCode::INTERNAL_SERVER_ERROR,
                     "unknown server error",
                 )
-                    .into_response();
+                    .into_response()
             }
             GetContentError::RootNotFound => {
                 (http::StatusCode::NOT_FOUND, "No root CID found").into_response()
@@ -153,10 +173,8 @@ pub fn markdown_to_html(data: Vec<u8>, get_content_url: &Url) -> String {
     for caps in re.captures_iter(&html) {
         if let Some(cap) = caps.get(1) {
             let path = PathBuf::from(cap.as_str());
-            let path = path.strip_prefix("./").unwrap();
-            let url = get_content_url
-                .join(path.to_str().unwrap())
-                .unwrap();
+            let path = normalize_path(path);
+            let url = get_content_url.join(path.to_str().unwrap()).unwrap();
             let old = format!(r#"src="./{}""#, cap.as_str());
             let new = format!(r#"src="{}""#, url);
             result = result.replace(&old, &new);
@@ -165,43 +183,18 @@ pub fn markdown_to_html(data: Vec<u8>, get_content_url: &Url) -> String {
 
     result
 }
-/*
-/// Replace all links to assets within the filesystem with links to the IPFS gateway
-/// This is a hack to get around the fact that we don't have a way to resolve links
-/// within our Manifest yet, since we decide we HATE unix-fs
-async fn object_markdown_to_html(manifest: &Manifest, object_path: &PathBuf) -> String {
-    let objects = manifest.objects();
-    let object = objects.get(object_path).unwrap();
-    let url = object_url(object);
-    let object_content = reqwest::get(url)
-        .await
-        .expect("object_content")
-        .text()
-        .await
-        .expect("object_content");
-    let base_path = object_path.parent().expect("base_path");
 
-    // First find all occurences of ./ and retrieve the object url from the manifest
-    // Then replace the ./ with a link to the Ipfs gateway
-    let re = Regex::new(r#"src="./([^"]+)"#).unwrap();
-    let mut result = object_content.clone();
-
-    for caps in re.captures_iter(&object_content) {
-        if let Some(cap) = caps.get(1) {
-            let path = PathBuf::from(cap.as_str());
-            let path = base_path.join(path);
-            let normalized_path = normalize_path(&path);
-            if let Some(object) = objects.get(&normalized_path) {
-                let url = object_url(object);
-
-                let old = format!(r#"src="./{}""#, cap.as_str());
-                let new = format!(r#"src="{}""#, url);
-                result = result.replace(&old, &new);
+fn normalize_path(path: PathBuf) -> PathBuf {
+    let mut normalized_path = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                normalized_path.pop();
+            }
+            _ => {
+                normalized_path.push(component);
             }
         }
     }
-
-    let html = markdown_to_html(result);
-    html
+    normalized_path
 }
-*/
