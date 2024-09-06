@@ -52,7 +52,15 @@ pub async fn handler(
                             path.display(),
                             query
                         );
-                        let html = markdown_to_html(data, state.get_content_forwarding_url());
+                        let base_path = path.parent();
+                        let empty_path = PathBuf::new();
+                        let base_path = base_path.unwrap_or(&empty_path);
+                        let html = markdown_to_html(
+                            data,
+                            &base_path.to_path_buf(),
+                            state.get_content_forwarding_url(),
+                        );
+
                         return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html)
                             .into_response());
                     };
@@ -152,7 +160,7 @@ impl IntoResponse for GetContentError {
     }
 }
 
-pub fn markdown_to_html(data: Vec<u8>, get_content_url: &Url) -> String {
+pub fn markdown_to_html(data: Vec<u8>, base_path: &PathBuf, get_content_url: &Url) -> String {
     let content = String::from_utf8(data).unwrap();
 
     let mut options = pulldown_cmark::Options::empty();
@@ -173,7 +181,7 @@ pub fn markdown_to_html(data: Vec<u8>, get_content_url: &Url) -> String {
     for caps in re.captures_iter(&html) {
         if let Some(cap) = caps.get(1) {
             let path = PathBuf::from(cap.as_str());
-            let path = normalize_path(path);
+            let path = normalize_path(base_path.join(path));
             let url = get_content_url.join(path.to_str().unwrap()).unwrap();
             let old = format!(r#"src="./{}""#, cap.as_str());
             let new = format!(r#"src="{}""#, url);
