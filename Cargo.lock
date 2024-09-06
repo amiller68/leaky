@@ -662,9 +662,9 @@ dependencies = [
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.13"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51e852e6dc9a5bed1fae92dd2375037bf2b768725bf3be87811edee3249d09ad"
+checksum = "608697df725056feaccfa42cffdaeeec3fccc4ffc38358ecd19b243e716a78e0"
 dependencies = [
  "libc",
 ]
@@ -2864,9 +2864,9 @@ checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
 
 [[package]]
 name = "rustix"
-version = "0.38.35"
+version = "0.38.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a85d50532239da68e9addb745ba38ff4612a242c1c7ceea689c4bc7c2f43c36f"
+checksum = "3f55e80d50763938498dd5ebb18647174e0c76dc38c5505294bb224624f30f36"
 dependencies = [
  "bitflags 2.6.0",
  "errno",
@@ -3592,7 +3592,7 @@ dependencies = [
 [[package]]
 name = "thumbs-up"
 version = "0.0.0"
-source = "git+https://github.com/amiller68/thumbs-up.git#e23d15b24fcc5e226cdab94a3da0445ded371569"
+source = "git+https://github.com/amiller68/thumbs-up.git#5989fa20edc77b8d8a844b4f133850d8a6ad6770"
 dependencies = [
  "anyhow",
  "base64ct",
