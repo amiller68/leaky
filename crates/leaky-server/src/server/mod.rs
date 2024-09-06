@@ -10,7 +10,7 @@ use crate::health;
 
 mod error_handlers;
 
-const CONTENT_PREFIX: &str = "/";
+const CONTENT_PREFIX: &str = "/content";
 const HEALTH_PREFIX: &str = "/_status";
 const API_PREFIX: &str = "/api/v0";
 

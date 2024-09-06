@@ -58,7 +58,7 @@ pub async fn handler(
                         let html = markdown_to_html(
                             data,
                             &base_path.to_path_buf(),
-                            state.get_content_forwarding_url(),
+                            &state.get_content_forwarding_url().join("content").unwrap(),
                         );
 
                         return Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html)

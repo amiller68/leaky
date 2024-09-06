@@ -33,7 +33,7 @@ services:
       - LISTEN_ADDR=0.0.0.0:3000
       - SQLITE_DATABASE_URL=sqlite:///app/data/server.db
       - IPFS_RPC_URL=http://ipfs:5001
-      - GET_CONTENT_FORWARDING_URL=https://leaky.krondor.org
+      - GET_CONTENT_FORWARDING_URL=https://leaky.krondor.org/content
     restart: unless-stopped
 
   swag:
@@ -62,4 +62,3 @@ volumes:
 networks:
   default:
     name: swag_net
-
