@@ -33,6 +33,27 @@ pub async fn handler(
 
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
+
+    // NOTE: trid data then ls, but that triggered 500s for some reason
+    //  Probably still need to fix that but for now just ls and if that fails, cat
+
+    let ls_result = mount.ls(&path).await;
+    match ls_result {
+        Ok(ls) => {
+            if !ls.is_empty() {
+                tracing::info!(
+                    "GET {} | {:?} | returning ls: {:?}",
+                    path.display(),
+                    query,
+                    ls
+                );
+                return Ok((http::StatusCode::OK, Json(ls)).into_response());
+            }
+        }
+        Err(MountError::PathNotDir(_)) => {}
+        Err(e) => return Err(GetContentError::Mount(e)),
+    };
+
     let data_result = mount.cat(&path).await;
     match data_result {
         Ok(data) => {
@@ -86,24 +107,7 @@ pub async fn handler(
                 }
             }
         }
-        Err(MountError::PathNotFile(_)) => {}
-        Err(e) => return Err(GetContentError::Mount(e)),
-    }
-
-    let ls_result = mount.ls(&path).await;
-    let ls = match ls_result {
-        Ok(ls) => {
-            if ls.is_empty() {
-                tracing::info!(
-                    "GET {} | {:?} | returning 404 - empty dir",
-                    path.display(),
-                    query
-                );
-                return Err(GetContentError::NotFound);
-            }
-            ls
-        }
-        Err(MountError::PathNotDir(_)) => {
+        Err(MountError::PathNotFile(_)) => {
             tracing::info!(
                 "GET {} | {:?} | returning 404 - not path",
                 path.display(),
@@ -112,16 +116,7 @@ pub async fn handler(
             return Err(GetContentError::NotFound);
         }
         Err(e) => return Err(GetContentError::Mount(e)),
-    };
-    tracing::info!(
-        "GET {} | {:?} | returning ls: {:?}",
-        path.display(),
-        query,
-        ls
-    );
-    let ls_json = serde_json::to_string(&ls).unwrap();
-
-    Ok((http::StatusCode::OK, Json(ls_json)).into_response())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

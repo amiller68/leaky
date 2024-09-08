@@ -45,7 +45,7 @@ impl Config {
             Ok(url) => url,
             Err(_e) => {
                 tracing::warn!("No GET_CONTENT_FORWARDING_URL found in .env. Using default");
-                "http://localhost:3000/content".to_string()
+                "http://localhost:3000".to_string()
             }
         };
         let get_content_forwarding_url = Url::parse(&get_content_forwarding_url_str)?;

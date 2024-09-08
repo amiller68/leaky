@@ -44,7 +44,7 @@
         chdir: /home/service/service
 
     - name: Run the docker compose stack
-      shell: su service -c "docker compose up -d --remove-orphans"
+      shell: su service -c "docker compose up -d --remove-orphans --force-recreate"
       args:
         chdir: /home/service/service
 

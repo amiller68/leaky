@@ -1,64 +1,92 @@
 #!/usr/bin/env bash
-
 set -euo pipefail
-
 # Colors for output
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
-
 # Function to print usage
 print_usage() {
-	echo "Usage: $0 [command]"
-	echo "Commands:"
-	echo "  up        Start all services"
-	echo "  down      Stop all services"
-	echo "  restart   Restart all services"
-	echo "  logs      View logs of all services"
-	echo "  ps        List running services"
-	echo "  shell     Open a shell in a service container"
+    echo "Usage: $0 [command]"
+    echo "Commands:"
+    echo "  up        Start all services"
+    echo "  down      Stop all services"
+    echo "  restart   Restart all services"
+    echo "  logs      View logs of all services"
+    echo "  ps        List running services"
+    echo "  shell     Open a shell in a service container"
 }
-
+# Function to start leaky server in a new tmux session
+start_leaky_server() {
+    tmux new-session -d -s leaky_server 'IPFS_RPC_URL=http://localhost:5001 cargo watch -x "run --bin leaky-server"'
+    echo -e "${GREEN}Leaky server started in a new tmux session.${NC}"
+    echo "To attach to the session, use: tmux attach-session -t leaky_server"
+}
+# Function to stop leaky server tmux session
+stop_leaky_server() {
+    if tmux has-session -t leaky_server 2>/dev/null; then
+        tmux kill-session -t leaky_server
+        echo -e "${GREEN}Leaky server tmux session stopped.${NC}"
+    else
+        echo -e "${RED}Leaky server tmux session not found.${NC}"
+    fi
+}
 # Check if Docker is running
 if ! docker info >/dev/null 2>&1; then
-	echo -e "${RED}Error: Docker is not running.${NC}"
-	exit 1
+    echo -e "${RED}Error: Docker is not running.${NC}"
+    exit 1
 fi
-
 # Main script logic
 case ${1:-} in
-up)
-	echo -e "${GREEN}Starting services...${NC}"
-	docker-compose up -d --build
-	;;
-down)
-	echo -e "${GREEN}Stopping services...${NC}"
-	docker-compose down
-	;;
-restart)
-	echo -e "${GREEN}Restarting services...${NC}"
-	docker-compose down
-	docker-compose up -d --build
-	;;
-logs)
-	echo -e "${GREEN}Viewing logs...${NC}"
-	docker-compose logs -f
-	;;
-ps)
-	echo -e "${GREEN}Listing running services...${NC}"
-	docker-compose ps
-	;;
-shell)
-	if [ -z ${2:-} ]; then
-		echo -e "${RED}Error: Please specify a service name.${NC}"
-		echo "Available services: ipfs, leaky, nginx"
-		exit 1
-	fi
-	echo -e "${GREEN}Opening shell in $2 service...${NC}"
-	docker-compose exec $2 /bin/sh
-	;;
-*)
-	print_usage
-	exit 1
-	;;
+    up)
+        # Ensure data directories exist
+        mkdir -p ./data/test
+        echo -e "${GREEN}Starting services...${NC}"
+        docker-compose up -d --build --remove-orphans
+        start_leaky_server
+        ;;
+    down)
+        echo -e "${GREEN}Stopping services...${NC}"
+        docker-compose down
+        stop_leaky_server
+        ;;
+    restart)
+        echo -e "${GREEN}Restarting services...${NC}"
+        docker-compose down
+        stop_leaky_server
+        docker-compose up -d --build
+        start_leaky_server
+        ;;
+    reset)
+        ./bin/dev.sh down
+        docker volume rm leaky_ipfs_data || true
+        rm -rf ./data/*db*
+        rm -rf ./data/test
+        mkdir -p ./data/pems
+        cp -r ./example ./data/test
+        ./bin/dev.sh up
+        sleep 3
+        cd ./data/test
+        cargo run --bin leaky-cli -- init --remote http://localhost:3001 --key-path ../pems && cargo run --bin leaky-cli -- add && cargo run --bin leaky-cli -- push
+        ;;
+    logs)
+        echo -e "${GREEN}Viewing logs...${NC}"
+        docker-compose logs -f
+        ;;
+    ps)
+        echo -e "${GREEN}Listing running services...${NC}"
+        docker-compose ps
+        ;;
+    shell)
+        if [ -z ${2:-} ]; then
+            echo -e "${RED}Error: Please specify a service name.${NC}"
+            echo "Available services: ipfs, nginx"
+            exit 1
+        fi
+        echo -e "${GREEN}Opening shell in $2 service...${NC}"
+        docker-compose exec $2 /bin/sh
+        ;;
+    *)
+        print_usage
+        exit 1
+        ;;
 esac
