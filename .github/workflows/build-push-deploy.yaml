@@ -1,17 +1,34 @@
-name: 🚀 Deploy to Host
+name: 🐳 Build, Push, and Deploy
 
 on:
-  workflow_run:
-    workflows: ["🐳 Containers"]
-    types:
-      - completed
-    branches:
-      - main
+  push:
+    branches: [main]
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/leaky-server:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/leaky-server:${{ github.sha }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
