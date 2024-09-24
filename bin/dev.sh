@@ -17,7 +17,7 @@ print_usage() {
 }
 # Function to start leaky server in a new tmux session
 start_leaky_server() {
-    tmux new-session -d -s leaky_server 'IPFS_RPC_URL=http://localhost:5001 cargo watch -x "run --bin leaky-server"'
+    tmux new-session -d -s leaky_server 'IPFS_RPC_URL=http://localhost:5001 GET_CONTENT_FORWARDING_URL=http://localhost:3001 cargo watch -x "run --bin leaky-server"'
     echo -e "${GREEN}Leaky server started in a new tmux session.${NC}"
     echo "To attach to the session, use: tmux attach-session -t leaky_server"
 }
@@ -59,6 +59,7 @@ case ${1:-} in
     reset)
         ./bin/dev.sh down
         docker volume rm leaky_ipfs_data || true
+        rm -rf ./data/*db
         rm -rf ./data/*db*
         rm -rf ./data/test
         mkdir -p ./data/pems
