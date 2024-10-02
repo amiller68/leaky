@@ -192,9 +192,16 @@ impl Mount {
         let path = clean_path(path);
 
         let data_node_cid = self.manifest.lock().data().clone();
-        let maybe_new_data_node_cid =
-            Self::upsert_link_and_object(&data_node_cid, &path, None, None, None, ipfs_rpc, block_cache)
-                .await?;
+        let maybe_new_data_node_cid = Self::upsert_link_and_object(
+            &data_node_cid,
+            &path,
+            None,
+            None,
+            None,
+            ipfs_rpc,
+            block_cache,
+        )
+        .await?;
 
         if let Some(new_data_node_cid) = maybe_new_data_node_cid {
             let new_data_node_cid = if new_data_node_cid == Cid::default() {
@@ -314,10 +321,11 @@ impl Mount {
         block_cache
             .lock()
             .insert(cid.to_string(), node.clone().into());
-
         for (_name, link) in node.iter() {
             if let Ipld::Link(cid) = link {
-                if cid.codec() != 0x55 {
+                // NOTE: this is kinda janky, but dont want to pull dag pb links
+                //  need to figure out how to handle this better
+                if cid.codec() != 0x55 && cid.codec() != 0x70 {
                     Self::pull_links(cid, block_cache, ipfs_rpc).await?;
                 }
             }

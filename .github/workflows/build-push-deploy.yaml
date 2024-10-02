@@ -19,7 +19,7 @@ jobs:
         id: check
         run: |
           git diff --name-only HEAD^ HEAD > changes.txt
-          if grep -qE '^crates/leaky-server/|^Cargo.lock$' changes.txt; then
+          if grep -qE '^crates/|^Cargo.lock$' changes.txt; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
@@ -84,3 +84,4 @@ jobs:
       - name: Clean up SSH key
         if: always()
         run: rm -f ~/.ssh/leaky/admin
+
