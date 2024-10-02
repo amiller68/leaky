@@ -24,8 +24,22 @@ start_leaky_server() {
 # Function to stop leaky server tmux session
 stop_leaky_server() {
     if tmux has-session -t leaky_server 2>/dev/null; then
+        # Send SIGTERM to the process running in the tmux session
+        tmux send-keys -t leaky_server C-c
+
+        # Wait for a moment to allow the process to gracefully shutdown
+        sleep 2
+
+        # Check if the process is still running
+        if tmux list-panes -t leaky_server -F '#{pane_pid}' | xargs ps -p >/dev/null 2>&1; then
+            echo -e "${YELLOW}Process didn't stop gracefully. Forcing termination...${NC}"
+            # Force kill the process
+            tmux list-panes -t leaky_server -F '#{pane_pid}' | xargs kill -9
+        fi
+
+        # Kill the tmux session
         tmux kill-session -t leaky_server
-        echo -e "${GREEN}Leaky server tmux session stopped.${NC}"
+        echo -e "${GREEN}Leaky server stopped and tmux session killed.${NC}"
     else
         echo -e "${RED}Leaky server tmux session not found.${NC}"
     fi
@@ -67,7 +81,11 @@ case ${1:-} in
         ./bin/dev.sh up
         sleep 3
         cd ./data/test
-        cargo run --bin leaky-cli -- init --remote http://localhost:3001 --key-path ../pems && cargo run --bin leaky-cli -- add && cargo run --bin leaky-cli -- push
+        cargo run --bin leaky-cli -- init --remote http://localhost:3001 --key-path ../pems \
+            && cargo run --bin leaky-cli -- add \
+            && cargo run --bin leaky-cli -- tag --path /writing/by_the_ocean.md --value '{"title": "by the ocean", "description": "i want to go back" }' \
+            && cargo run --bin leaky-cli -- tag --path /writing/backpack-life.md --value '{"title": "backpack lyfe", "description": "oof" }' --backdate 2024-1-1 \
+            && cargo run --bin leaky-cli -- push
         ;;
     logs)
         echo -e "${GREEN}Viewing logs...${NC}"

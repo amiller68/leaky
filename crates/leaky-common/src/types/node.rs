@@ -52,7 +52,7 @@ impl Node {
         self.0.insert(name.to_string(), Ipld::Link(*link));
     }
 
-    pub fn put_object(&mut self, name: &str, maybe_metadata: Option<&BTreeMap<String, Ipld>>) {
+    pub fn put_object(&mut self, name: &str, maybe_metadata: Option<&BTreeMap<String, Ipld>>, maybe_backdate: Option<chrono::NaiveDate>) {
         assert_ne!(name, METADATA_KEY);
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
         let mut metadata_map = match metadata_ipld {
@@ -62,7 +62,7 @@ impl Node {
         let object: Object = match metadata_map.get(name) {
             Some(object_ipld) => {
                 let mut object = Object::try_from(object_ipld.clone()).unwrap();
-                object.update(maybe_metadata);
+                object.update(maybe_metadata, maybe_backdate);
                 object
             }
             _ => Object::new(maybe_metadata),
@@ -78,13 +78,14 @@ impl Node {
         name: &str,
         maybe_link: Option<&Cid>,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
+        maybe_backdate: Option<chrono::NaiveDate>,
     ) {
         assert_ne!(name, METADATA_KEY);
 
         if let Some(link) = maybe_link {
             self.put_link(name, link);
         }
-        self.put_object(name, maybe_metadata);
+        self.put_object(name, maybe_metadata, maybe_backdate)
     }
 
     // Remove a link from the node. Should return the CID of the link, as well as the fully

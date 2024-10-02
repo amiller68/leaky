@@ -140,6 +140,7 @@ impl Mount {
             &path,
             Some(&data_cid),
             maybe_metadata,
+            None,
             ipfs_rpc,
             block_cache,
         )
@@ -158,6 +159,7 @@ impl Mount {
         &mut self,
         path: &PathBuf,
         metadata: &BTreeMap<String, Ipld>,
+        backdate: Option<chrono::NaiveDate>,
     ) -> Result<(), MountError> {
         let ipfs_rpc = &self.ipfs_rpc;
         let block_cache = &self.block_cache;
@@ -169,6 +171,7 @@ impl Mount {
             &path,
             None,
             Some(metadata),
+            backdate,
             ipfs_rpc,
             block_cache,
         )
@@ -190,7 +193,7 @@ impl Mount {
 
         let data_node_cid = self.manifest.lock().data().clone();
         let maybe_new_data_node_cid =
-            Self::upsert_link_and_object(&data_node_cid, &path, None, None, ipfs_rpc, block_cache)
+            Self::upsert_link_and_object(&data_node_cid, &path, None, None, None, ipfs_rpc, block_cache)
                 .await?;
 
         if let Some(new_data_node_cid) = maybe_new_data_node_cid {
@@ -329,6 +332,7 @@ impl Mount {
         path: &Path,
         maybe_link: Option<&Cid>,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
+        maybe_backdate: Option<chrono::NaiveDate>,
         ipfs_rpc: &IpfsRpc,
         block_cache: &Arc<Mutex<BlockCache>>,
     ) -> Result<Option<Cid>, MountError> {
@@ -347,7 +351,7 @@ impl Mount {
                         return Ok(Some(Cid::default()));
                     }
                 } else {
-                    node.update_link(&next, maybe_link, maybe_metadata);
+                    node.update_link(&next, maybe_link, maybe_metadata, maybe_backdate);
                 }
 
                 let cid = Self::put_cache::<Node>(&node, block_cache).await?;
@@ -369,6 +373,7 @@ impl Mount {
                     &remaining,
                     maybe_link,
                     maybe_metadata,
+                    maybe_backdate,
                     ipfs_rpc,
                     block_cache,
                 )

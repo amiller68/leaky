@@ -16,6 +16,8 @@ pub struct Tag {
     path: PathBuf,
     #[clap(short, long)]
     value: String,
+    #[clap(short, long)]
+    backdate: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +36,8 @@ pub enum TagError {
     PathPrefix(#[from] std::path::StripPrefixError),
     #[error("mount error: {0}")]
     Mount(#[from] MountError),
+    #[error("invalid backdate: {0}")]
+    InvalidBackdate(#[from] chrono::ParseError),
 }
 
 #[async_trait]
@@ -50,9 +54,13 @@ impl Op for Tag {
 
         let path = self.path.clone();
         let value = self.value.clone();
+        let backdate = match &self.backdate {
+            Some(bd) => Some(chrono::NaiveDate::parse_from_str(&bd, "%Y-%m-%d")?),
+            None => None,
+        }; 
 
         let metadata = value_to_metadata(value)?;
-        mount.tag(&path, &metadata).await?;
+        mount.tag(&path, &metadata, backdate).await?;
         mount.push().await?;
         let new_cid = mount.cid();
 

@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use chrono::Datelike;
 
 use super::Ipld;
 
@@ -122,7 +123,24 @@ impl Object {
     /* Updaters */
 
     /// Update the data, metadata or both
-    pub fn update(&mut self, maybe_metadata: Option<&BTreeMap<String, Ipld>>) {
+    pub fn update(&mut self, maybe_metadata: Option<&BTreeMap<String, Ipld>>, maybe_backdate: Option<chrono::NaiveDate>) {
+        match maybe_backdate {
+            Some(naive_date) => {
+                let time_date = time::Date::from_calendar_date(
+                    naive_date.year(),
+                    time::Month::try_from(naive_date.month() as u8).unwrap(),
+                    naive_date.day() as u8,
+                ).unwrap();
+    
+                // Create a time::OffsetDateTime from the date, assuming midnight UTC
+                let offset_dt = time_date
+                    .with_hms(0, 0, 0).unwrap()
+                    .assume_utc();
+
+                self.created_at = offset_dt;
+            },
+            None => {},
+        }
         self.updated_at = OffsetDateTime::now_utc();
         match maybe_metadata {
             Some(metadata) => {

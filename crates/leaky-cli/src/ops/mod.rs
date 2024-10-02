@@ -14,3 +14,4 @@ pub use key::Key;
 pub use pull::Pull;
 pub use push::Push;
 pub use stat::Stat;
+pub use tag::Tag;
