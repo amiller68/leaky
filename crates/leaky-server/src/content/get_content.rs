@@ -2,10 +2,10 @@ use axum::extract::{Json, Path, Query, State};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use image::{imageops::FilterType, ImageFormat};
-use std::path::PathBuf;
-use std::io::Cursor;
-use url::Url;
 use regex::Regex;
+use std::io::Cursor;
+use std::path::PathBuf;
+use url::Url;
 
 use leaky_common::prelude::*;
 
@@ -28,13 +28,14 @@ pub async fn handler(
     let db = state.sqlite_database();
     let mut conn = db.acquire().await?;
     let maybe_root_cid = RootCid::pull(&mut conn).await?;
-    let root_cid = match maybe_root_cid {
-        Some(rc) => rc,
+
+    // TODO: there's probably a better way to do this -- mounts always at least populated
+    //  so maybe its fine to just serve whatever is there
+    match maybe_root_cid {
+        Some(_rc) => {},
         None => return Err(GetContentError::RootNotFound),
     };
-
-    let ipfs_rpc = state.ipfs_rpc();
-    let mount = Mount::pull(root_cid.cid(), &ipfs_rpc).await?;
+    let mount = state.mount();
 
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
@@ -75,7 +76,10 @@ pub async fn handler(
                 let empty_path = PathBuf::new();
                 let base_path = base_path.unwrap_or(&empty_path);
                 let get_content_url = state.get_content_forwarding_url().join("content").unwrap();
-                let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
+                let data = mount
+                    .cat(&path)
+                    .await
+                    .map_err(|_| GetContentError::NotFound)?;
                 let html = markdown_to_html(data, &base_path.to_path_buf(), &get_content_url);
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
             } else {
@@ -84,26 +88,50 @@ pub async fn handler(
                     path.display(),
                     query
                 );
-                let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
+                let data = mount
+                    .cat(&path)
+                    .await
+                    .map_err(|_| GetContentError::NotFound)?;
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data).into_response())
             }
         }
         // Images
         "png" | "jpg" | "jpeg" | "gif" => {
             tracing::info!("GET {} | {:?} | returning image", path.display(), query);
-            let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
+            let data = mount
+                .cat(&path)
+                .await
+                .map_err(|_| GetContentError::NotFound)?;
             if query.thumbnail.unwrap_or(false) && ext != "gif" {
                 let resized_image = resize_image(&data, ext)?;
-                Ok((http::StatusCode::OK, [(CONTENT_TYPE, format!("image/{}", ext))], resized_image).into_response())
+                Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, format!("image/{}", ext))],
+                    resized_image,
+                )
+                    .into_response())
             } else {
-                Ok((http::StatusCode::OK, [(CONTENT_TYPE, format!("image/{}", ext))], data).into_response())
+                Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, format!("image/{}", ext))],
+                    data,
+                )
+                    .into_response())
             }
         }
         // All other files
         _ => {
             tracing::info!("GET {} | {:?} | returning misc file", path.display(), query);
-            let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
-            Ok((http::StatusCode::OK, [(CONTENT_TYPE, "application/octet-stream")], data).into_response())
+            let data = mount
+                .cat(&path)
+                .await
+                .map_err(|_| GetContentError::NotFound)?;
+            Ok((
+                http::StatusCode::OK,
+                [(CONTENT_TYPE, "application/octet-stream")],
+                data,
+            )
+                .into_response())
         }
     }
 }
@@ -216,14 +244,20 @@ impl IntoResponse for GetContentError {
             | GetContentError::Database(_)
             | GetContentError::ImageProcessing(_) => {
                 tracing::error!("{:?}", self);
-                (http::StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+                (
+                    http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error",
+                )
+                    .into_response()
             }
             GetContentError::RootNotFound | GetContentError::NotFound => {
                 (http::StatusCode::NOT_FOUND, "Not found").into_response()
             }
-            GetContentError::UnsupportedImageFormat => {
-                (http::StatusCode::UNSUPPORTED_MEDIA_TYPE, "Unsupported image format").into_response()
-            }
+            GetContentError::UnsupportedImageFormat => (
+                http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "Unsupported image format",
+            )
+                .into_response(),
         }
     }
 }

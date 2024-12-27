@@ -52,7 +52,12 @@ impl Node {
         self.0.insert(name.to_string(), Ipld::Link(*link));
     }
 
-    pub fn put_object(&mut self, name: &str, maybe_metadata: Option<&BTreeMap<String, Ipld>>, maybe_backdate: Option<chrono::NaiveDate>) {
+    pub fn put_object(
+        &mut self,
+        name: &str,
+        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
+        maybe_backdate: Option<chrono::NaiveDate>,
+    ) {
         assert_ne!(name, METADATA_KEY);
         let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
         let mut metadata_map = match metadata_ipld {

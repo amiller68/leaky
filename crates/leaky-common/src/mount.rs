@@ -92,6 +92,19 @@ impl Mount {
         })
     }
 
+    pub async fn refresh(&mut self, cid: Cid) -> Result<(), MountError> {
+        let ipfs_rpc = &self.ipfs_rpc;
+        let manifest = Self::get::<Manifest>(&cid, ipfs_rpc).await?;
+        let block_cache = Arc::new(Mutex::new(BlockCache::default()));
+
+        Self::pull_links(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
+
+        self.manifest = Arc::new(Mutex::new(manifest));
+        self.block_cache = block_cache;
+
+        Ok(())
+    }
+
     pub async fn push(&mut self) -> Result<(), MountError> {
         let ipfs_rpc = &self.ipfs_rpc;
         let block_cache_data = self.block_cache.lock().clone();

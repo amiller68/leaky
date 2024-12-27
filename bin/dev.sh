@@ -60,7 +60,7 @@ case ${1:-} in
         ;;
     down)
         echo -e "${GREEN}Stopping services...${NC}"
-        docker-compose down
+        # docker-compose down
         stop_leaky_server
         ;;
     restart)

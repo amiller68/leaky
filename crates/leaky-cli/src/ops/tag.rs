@@ -57,7 +57,7 @@ impl Op for Tag {
         let backdate = match &self.backdate {
             Some(bd) => Some(chrono::NaiveDate::parse_from_str(&bd, "%Y-%m-%d")?),
             None => None,
-        }; 
+        };
 
         let metadata = value_to_metadata(value)?;
         mount.tag(&path, &metadata, backdate).await?;
