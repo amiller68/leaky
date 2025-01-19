@@ -49,25 +49,35 @@ if ! docker info >/dev/null 2>&1; then
     echo -e "${RED}Error: Docker is not running.${NC}"
     exit 1
 fi
+# Function to determine docker compose command
+get_docker_compose_cmd() {
+    if command -v docker-compose &> /dev/null; then
+        echo "docker-compose"
+    else
+        echo "docker compose"
+    fi
+}
+# Store the appropriate docker compose command
+DOCKER_COMPOSE_CMD=$(get_docker_compose_cmd)
 # Main script logic
 case ${1:-} in
     up)
         # Ensure data directories exist
         mkdir -p ./data/test
         echo -e "${GREEN}Starting services...${NC}"
-        docker-compose up -d --build --remove-orphans
+        $DOCKER_COMPOSE_CMD up -d --build --remove-orphans
         start_leaky_server
         ;;
     down)
         echo -e "${GREEN}Stopping services...${NC}"
-        # docker-compose down
+        # $DOCKER_COMPOSE_CMD down
         stop_leaky_server
         ;;
     restart)
         echo -e "${GREEN}Restarting services...${NC}"
-        docker-compose down
+        $DOCKER_COMPOSE_CMD down
         stop_leaky_server
-        docker-compose up -d --build
+        $DOCKER_COMPOSE_CMD up -d --build
         start_leaky_server
         ;;
     reset)
@@ -89,11 +99,11 @@ case ${1:-} in
         ;;
     logs)
         echo -e "${GREEN}Viewing logs...${NC}"
-        docker-compose logs -f
+        $DOCKER_COMPOSE_CMD logs -f
         ;;
     ps)
         echo -e "${GREEN}Listing running services...${NC}"
-        docker-compose ps
+        $DOCKER_COMPOSE_CMD ps
         ;;
     shell)
         if [ -z ${2:-} ]; then
@@ -102,7 +112,7 @@ case ${1:-} in
             exit 1
         fi
         echo -e "${GREEN}Opening shell in $2 service...${NC}"
-        docker-compose exec $2 /bin/sh
+        $DOCKER_COMPOSE_CMD exec $2 /bin/sh
         ;;
     *)
         print_usage

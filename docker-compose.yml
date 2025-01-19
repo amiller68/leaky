@@ -1,12 +1,12 @@
-version: '3'
+version: "3"
 
 services:
   ipfs:
     image: ipfs/go-ipfs:latest
     ports:
-      - "4001:4001"  # IPFS swarm
-      - "8080:8080"  # IPFS gateway
-      - "5001:5001"  # IPFS API
+      - "4001:4001" # IPFS swarm
+      - "8080:8080" # IPFS gateway
+      - "5001:5001" # IPFS API
     volumes:
       - ipfs_data:/data/ipfs
     networks:
@@ -18,12 +18,14 @@ services:
       - "3001:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./logs/nginx:/var/log/nginx
     depends_on:
       - ipfs
     networks:
       - app_network
+    # Add this back for Windows/Mac compatibility
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:172.17.0.1"
 
 networks:
   app_network:
@@ -31,3 +33,4 @@ networks:
 
 volumes:
   ipfs_data:
+

@@ -50,7 +50,11 @@ pub async fn handler(
                     query,
                     ls
                 );
-                return Ok((http::StatusCode::OK, Json(ls)).into_response());
+                return Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, "application/json")],
+                    Json(ls)
+                ).into_response());
             }
         }
         Err(MountError::PathNotDir(_)) => {}
@@ -246,15 +250,21 @@ impl IntoResponse for GetContentError {
                 tracing::error!("{:?}", self);
                 (
                     http::StatusCode::INTERNAL_SERVER_ERROR,
+                    [(CONTENT_TYPE, "text/plain")],
                     "Internal server error",
                 )
                     .into_response()
             }
             GetContentError::RootNotFound | GetContentError::NotFound => {
-                (http::StatusCode::NOT_FOUND, "Not found").into_response()
+                (
+                    http::StatusCode::NOT_FOUND,
+                    [(CONTENT_TYPE, "text/plain")],
+                    "Not found"
+                ).into_response()
             }
             GetContentError::UnsupportedImageFormat => (
                 http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                [(CONTENT_TYPE, "text/plain")],
                 "Unsupported image format",
             )
                 .into_response(),
