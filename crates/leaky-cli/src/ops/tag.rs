@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -46,7 +47,7 @@ impl Op for Tag {
     type Output = Cid;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
-        let cid = state.cid().clone();
+        let cid = *state.cid();
         let change_log = state.change_log().clone();
         let mut updates = change_log.clone();
         let ipfs_rpc = Arc::new(state.client()?.ipfs_rpc()?);
@@ -55,9 +56,9 @@ impl Op for Tag {
         let path = self.path.clone();
         let value = self.value.clone();
         let backdate = match &self.backdate {
-            Some(bd) => Some(chrono::NaiveDate::parse_from_str(&bd, "%Y-%m-%d")?),
+            Some(bd) => Some(chrono::NaiveDate::parse_from_str(bd, "%Y-%m-%d")?),
             None => None,
-        }; 
+        };
 
         let metadata = value_to_metadata(value)?;
         mount.tag(&path, &metadata, backdate).await?;
@@ -72,23 +73,18 @@ impl Op for Tag {
         // Get the path stripped of the / prefix
         let path = clean_path(&path);
         for (c_path, (cid, change)) in change_log.iter() {
-            if path == *c_path {
-                match change {
-                    ChangeType::Base => {
-                        updates.insert(c_path.clone(), (*cid, ChangeType::Modified));
-                    }
-                    _ => {}
-                }
+            if path == *c_path && change == &ChangeType::Base {
+                updates.insert(c_path.clone(), (*cid, ChangeType::Modified));
             }
         }
 
-        state.save(&mut mount, Some(&updates), None)?;
+        state.save(&mount, Some(&updates), None)?;
 
         Ok(cid)
     }
 }
 
-fn clean_path(path: &PathBuf) -> PathBuf {
+fn clean_path(path: &Path) -> PathBuf {
     // Strip the / prefix
     path.strip_prefix("/").unwrap().to_path_buf()
 }

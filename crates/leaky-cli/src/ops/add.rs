@@ -50,7 +50,7 @@ impl Op for Add {
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
         let mut client = state.client()?;
-        let cid = state.cid().clone();
+        let cid = *state.cid();
         let mut change_log = state.change_log().clone();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
         let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
@@ -84,7 +84,7 @@ impl Op for Add {
             }
         }
         mount.push().await?;
-        let new_cid = mount.cid().clone();
+        let new_cid = *mount.cid();
 
         if new_cid == cid {
             println!("No changes to add");
@@ -93,7 +93,7 @@ impl Op for Add {
 
         mount.push().await?;
 
-        state.save(&mut mount, Some(&updates), None)?;
+        state.save(&mount, Some(&updates), None)?;
 
         Ok(new_cid)
     }

@@ -30,7 +30,7 @@ impl DerefMut for BlockCache {
     }
 }
 
-pub fn clean_path(path: &PathBuf) -> PathBuf {
+pub fn clean_path(path: &Path) -> PathBuf {
     if !path.is_absolute() {
         panic!("path is not absolute");
     }
@@ -92,6 +92,19 @@ impl Mount {
         })
     }
 
+    pub async fn refresh(&mut self, cid: Cid) -> Result<(), MountError> {
+        let ipfs_rpc = &self.ipfs_rpc;
+        let manifest = Self::get::<Manifest>(&cid, ipfs_rpc).await?;
+        let block_cache = Arc::new(Mutex::new(BlockCache::default()));
+
+        Self::pull_links(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
+
+        self.manifest = Arc::new(Mutex::new(manifest));
+        self.block_cache = block_cache;
+
+        Ok(())
+    }
+
     pub async fn push(&mut self) -> Result<(), MountError> {
         let ipfs_rpc = &self.ipfs_rpc;
         let block_cache_data = self.block_cache.lock().clone();
@@ -115,7 +128,7 @@ impl Mount {
 
     pub async fn add<R>(
         &mut self,
-        path: &PathBuf,
+        path: &Path,
         data: R,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
         hash_only: bool,
@@ -133,7 +146,7 @@ impl Mount {
             Self::add_data(data, ipfs_rpc).await?
         };
 
-        let data_node_cid = self.manifest.lock().data().clone();
+        let data_node_cid = *self.manifest.lock().data();
 
         let maybe_new_data_node_cid = Self::upsert_link_and_object(
             &data_node_cid,
@@ -157,7 +170,7 @@ impl Mount {
 
     pub async fn tag(
         &mut self,
-        path: &PathBuf,
+        path: &Path,
         metadata: &BTreeMap<String, Ipld>,
         backdate: Option<chrono::NaiveDate>,
     ) -> Result<(), MountError> {
@@ -165,7 +178,7 @@ impl Mount {
         let block_cache = &self.block_cache;
         let path = clean_path(path);
 
-        let data_node_cid = self.manifest.lock().data().clone();
+        let data_node_cid = *self.manifest.lock().data();
         let maybe_new_data_node_cid = Self::upsert_link_and_object(
             &data_node_cid,
             &path,
@@ -186,12 +199,12 @@ impl Mount {
         Ok(())
     }
 
-    pub async fn rm(&mut self, path: &PathBuf) -> Result<(), MountError> {
+    pub async fn rm(&mut self, path: &Path) -> Result<(), MountError> {
         let ipfs_rpc = &self.ipfs_rpc;
         let block_cache = &self.block_cache;
         let path = clean_path(path);
 
-        let data_node_cid = self.manifest.lock().data().clone();
+        let data_node_cid = *self.manifest.lock().data();
         let maybe_new_data_node_cid = Self::upsert_link_and_object(
             &data_node_cid,
             &path,
@@ -221,11 +234,11 @@ impl Mount {
 
     pub async fn ls(
         &self,
-        path: &PathBuf,
+        path: &Path,
     ) -> Result<Vec<(String, (Cid, Option<Object>))>, MountError> {
         let block_cache = &self.block_cache;
         let path = clean_path(path);
-        let data_node_cid = self.manifest.lock().data().clone();
+        let data_node_cid = *self.manifest.lock().data();
         let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
 
         for part in path.iter() {
@@ -256,12 +269,12 @@ impl Mount {
         Ok(sorted_items)
     }
 
-    pub async fn cat(&self, path: &PathBuf) -> Result<Vec<u8>, MountError> {
+    pub async fn cat(&self, path: &Path) -> Result<Vec<u8>, MountError> {
         let ipfs_rpc = &self.ipfs_rpc;
         let block_cache = &self.block_cache;
 
         let path = clean_path(path);
-        let data_node_cid = self.manifest.lock().data().clone();
+        let data_node_cid = *self.manifest.lock().data();
         let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
 
         let dir_path = path.parent().unwrap_or(Path::new("/"));
@@ -284,7 +297,7 @@ impl Mount {
     }
 
     #[async_recursion::async_recursion]
-    async fn recursive_items(&self, path: &PathBuf) -> Result<Vec<(PathBuf, Cid)>, MountError> {
+    async fn recursive_items(&self, path: &Path) -> Result<Vec<(PathBuf, Cid)>, MountError> {
         let mut items = vec![];
         let links = match self.ls(path).await {
             Ok(l) => l,
@@ -293,7 +306,7 @@ impl Mount {
         };
 
         for (name, (_link, object)) in links {
-            let mut current_path = path.clone();
+            let mut current_path = path.to_path_buf();
             current_path.push(&name);
 
             if object.is_none() {
@@ -341,7 +354,7 @@ impl Mount {
         maybe_link: Option<&Cid>,
         maybe_metadata: Option<&BTreeMap<String, Ipld>>,
         maybe_backdate: Option<chrono::NaiveDate>,
-        ipfs_rpc: &IpfsRpc,
+        _ipfs_rpc: &IpfsRpc,
         block_cache: &Arc<Mutex<BlockCache>>,
     ) -> Result<Option<Cid>, MountError> {
         let is_rm = maybe_link.is_none() && maybe_metadata.is_none();
@@ -382,7 +395,7 @@ impl Mount {
                     maybe_link,
                     maybe_metadata,
                     maybe_backdate,
-                    ipfs_rpc,
+                    _ipfs_rpc,
                     block_cache,
                 )
                 .await?;
@@ -526,8 +539,7 @@ mod test {
 
     async fn empty_mount() -> Mount {
         let ipfs_rpc = IpfsRpc::default();
-        let mount = Mount::init(&ipfs_rpc).await.unwrap();
-        mount
+        Mount::init(&ipfs_rpc).await.unwrap()
     }
 
     #[tokio::test]
@@ -605,7 +617,7 @@ mod test {
             .add(&PathBuf::from("/bar"), data, None, true)
             .await
             .unwrap();
-        let cid = mount.cid().clone();
+        let cid = *mount.cid();
         mount.push().await.unwrap();
 
         let mount = Mount::pull(cid, &IpfsRpc::default()).await.unwrap();

@@ -21,8 +21,8 @@ impl Op for Stat {
     type Output = Cid;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
-        let cid = state.cid().clone();
-        let previous_cid = state.previous_cid().clone();
+        let cid = *state.cid();
+        let previous_cid = *state.previous_cid();
         let change_log = state.change_log().clone();
 
         println!("cid: {:?}", cid);

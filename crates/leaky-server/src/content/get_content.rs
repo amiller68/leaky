@@ -1,11 +1,12 @@
-use axum::extract::{Json, Path, Query, State};
+use axum::extract::{Json, Path as AxumPath, Query, State};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use image::{imageops::FilterType, ImageFormat};
-use std::path::PathBuf;
-use std::io::Cursor;
-use url::Url;
 use regex::Regex;
+use std::io::Cursor;
+use std::path::Path;
+use std::path::PathBuf;
+use url::Url;
 
 use leaky_common::prelude::*;
 
@@ -22,19 +23,20 @@ pub struct GetContentQuery {
 }
 pub async fn handler(
     State(state): State<AppState>,
-    Path(path): Path<PathBuf>,
+    AxumPath(path): AxumPath<PathBuf>,
     Query(query): Query<GetContentQuery>,
 ) -> Result<impl IntoResponse, GetContentError> {
     let db = state.sqlite_database();
     let mut conn = db.acquire().await?;
     let maybe_root_cid = RootCid::pull(&mut conn).await?;
-    let root_cid = match maybe_root_cid {
-        Some(rc) => rc,
+
+    // TODO: there's probably a better way to do this -- mounts always at least populated
+    //  so maybe its fine to just serve whatever is there
+    match maybe_root_cid {
+        Some(_rc) => {}
         None => return Err(GetContentError::RootNotFound),
     };
-
-    let ipfs_rpc = state.ipfs_rpc();
-    let mount = Mount::pull(root_cid.cid(), &ipfs_rpc).await?;
+    let mount = state.mount();
 
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
@@ -49,7 +51,12 @@ pub async fn handler(
                     query,
                     ls
                 );
-                return Ok((http::StatusCode::OK, Json(ls)).into_response());
+                return Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, "application/json")],
+                    Json(ls),
+                )
+                    .into_response());
             }
         }
         Err(MountError::PathNotDir(_)) => {}
@@ -75,8 +82,11 @@ pub async fn handler(
                 let empty_path = PathBuf::new();
                 let base_path = base_path.unwrap_or(&empty_path);
                 let get_content_url = state.get_content_forwarding_url().join("content").unwrap();
-                let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
-                let html = markdown_to_html(data, &base_path.to_path_buf(), &get_content_url);
+                let data = mount
+                    .cat(&path)
+                    .await
+                    .map_err(|_| GetContentError::NotFound)?;
+                let html = markdown_to_html(data, base_path, &get_content_url);
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
             } else {
                 tracing::info!(
@@ -84,26 +94,50 @@ pub async fn handler(
                     path.display(),
                     query
                 );
-                let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
+                let data = mount
+                    .cat(&path)
+                    .await
+                    .map_err(|_| GetContentError::NotFound)?;
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data).into_response())
             }
         }
         // Images
         "png" | "jpg" | "jpeg" | "gif" => {
             tracing::info!("GET {} | {:?} | returning image", path.display(), query);
-            let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
+            let data = mount
+                .cat(&path)
+                .await
+                .map_err(|_| GetContentError::NotFound)?;
             if query.thumbnail.unwrap_or(false) && ext != "gif" {
                 let resized_image = resize_image(&data, ext)?;
-                Ok((http::StatusCode::OK, [(CONTENT_TYPE, format!("image/{}", ext))], resized_image).into_response())
+                Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, format!("image/{}", ext))],
+                    resized_image,
+                )
+                    .into_response())
             } else {
-                Ok((http::StatusCode::OK, [(CONTENT_TYPE, format!("image/{}", ext))], data).into_response())
+                Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, format!("image/{}", ext))],
+                    data,
+                )
+                    .into_response())
             }
         }
         // All other files
         _ => {
             tracing::info!("GET {} | {:?} | returning misc file", path.display(), query);
-            let data = mount.cat(&path).await.map_err(|_| GetContentError::NotFound)?;
-            Ok((http::StatusCode::OK, [(CONTENT_TYPE, "application/octet-stream")], data).into_response())
+            let data = mount
+                .cat(&path)
+                .await
+                .map_err(|_| GetContentError::NotFound)?;
+            Ok((
+                http::StatusCode::OK,
+                [(CONTENT_TYPE, "application/octet-stream")],
+                data,
+            )
+                .into_response())
         }
     }
 }
@@ -142,7 +176,7 @@ fn calculate_dimensions(width: u32, height: u32) -> (u32, u32) {
     }
 }
 
-pub fn markdown_to_html(data: Vec<u8>, base_path: &PathBuf, get_content_url: &Url) -> String {
+pub fn markdown_to_html(data: Vec<u8>, base_path: &Path, get_content_url: &Url) -> String {
     let content = String::from_utf8(data).unwrap();
 
     let mut options = pulldown_cmark::Options::empty();
@@ -216,14 +250,25 @@ impl IntoResponse for GetContentError {
             | GetContentError::Database(_)
             | GetContentError::ImageProcessing(_) => {
                 tracing::error!("{:?}", self);
-                (http::StatusCode::INTERNAL_SERVER_ERROR, "Internal server error").into_response()
+                (
+                    http::StatusCode::INTERNAL_SERVER_ERROR,
+                    [(CONTENT_TYPE, "text/plain")],
+                    "Internal server error",
+                )
+                    .into_response()
             }
-            GetContentError::RootNotFound | GetContentError::NotFound => {
-                (http::StatusCode::NOT_FOUND, "Not found").into_response()
-            }
-            GetContentError::UnsupportedImageFormat => {
-                (http::StatusCode::UNSUPPORTED_MEDIA_TYPE, "Unsupported image format").into_response()
-            }
+            GetContentError::RootNotFound | GetContentError::NotFound => (
+                http::StatusCode::NOT_FOUND,
+                [(CONTENT_TYPE, "text/plain")],
+                "Not found",
+            )
+                .into_response(),
+            GetContentError::UnsupportedImageFormat => (
+                http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                [(CONTENT_TYPE, "text/plain")],
+                "Unsupported image format",
+            )
+                .into_response(),
         }
     }
 }

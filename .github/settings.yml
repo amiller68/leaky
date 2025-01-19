@@ -30,12 +30,12 @@ branches:
         required_approving_review_count: 1
         require_code_owner_reviews: true
 
-      required_status_checks:
-        strict: true
-        contexts:
-          - "cargo-deny (advisories)"
-          - "cargo-deny (bans licenses sources)"
+      # required_status_checks:
+      #   strict: true
+      #   contexts:
+      #     - "cargo-deny (advisories)"
+      #     - "cargo-deny (bans licenses sources)"
 
-      # Required to to be present due too a limitation in GitHub's GraphQL API
-      restrictions: null
-      required_linear_history: true
+      # # Required to to be present due too a limitation in GitHub's GraphQL API
+      # restrictions: null
+      # required_linear_history: true

@@ -36,7 +36,7 @@ impl Config {
             Ok(addr) => addr,
             Err(_e) => {
                 tracing::warn!("No LISTEN_ADDR found in .env. Using default");
-                "127.0.0.1:3000".to_string()
+                "0.0.0.0:3000".to_string()
             }
         };
         let listen_addr = listen_addr_str.parse()?;

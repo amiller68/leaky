@@ -52,9 +52,6 @@ pub async fn server(
     })
 }
 
-/// Sets up system panics to use the tracing infrastructure to log reported issues. This doesn't
-/// prevent the panic from taking out the service but ensures that it and any available information
-/// is properly reported using the standard logging mechanism.
 pub fn register_panic_logger() {
     std::panic::set_hook(Box::new(|panic| match panic.location() {
         Some(loc) => {

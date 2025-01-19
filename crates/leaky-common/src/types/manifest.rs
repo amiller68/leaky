@@ -16,12 +16,12 @@ pub struct Manifest {
     data: Cid,
 }
 
-impl Into<Ipld> for Manifest {
-    fn into(self) -> Ipld {
+impl From<Manifest> for Ipld {
+    fn from(manifest: Manifest) -> Self {
         let mut map = std::collections::BTreeMap::new();
-        map.insert("version".to_string(), self.version.clone().into());
-        map.insert("previous".to_string(), Ipld::Link(self.previous().clone()));
-        map.insert("data".to_string(), Ipld::Link(self.data.clone()));
+        map.insert("version".to_string(), manifest.version.into());
+        map.insert("previous".to_string(), Ipld::Link(manifest.previous));
+        map.insert("data".to_string(), Ipld::Link(manifest.data));
         Ipld::Map(map)
     }
 }
