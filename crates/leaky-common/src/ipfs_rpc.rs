@@ -60,10 +60,12 @@ impl IpfsRpc {
             MhCode::Sha3_256 => "sha3-256",
             _ => DEFAULT_MH_TYPE,
         };
-        let mut options = AddRequest::default();
-        options.hash = Some(hash);
-        options.cid_version = Some(DEFAULT_CID_VERSION);
-        options.only_hash = Some(true);
+        let options = AddRequest {
+            hash: Some(hash),
+            cid_version: Some(DEFAULT_CID_VERSION),
+            only_hash: Some(true),
+            ..Default::default()
+        };
         let client = self.client.clone();
         let response = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current()
@@ -86,9 +88,11 @@ impl IpfsRpc {
             _ => DEFAULT_MH_TYPE,
         };
 
-        let mut options = AddRequest::default();
-        options.hash = Some(hash);
-        options.cid_version = Some(DEFAULT_CID_VERSION);
+        let options = AddRequest {
+            hash: Some(hash),
+            cid_version: Some(DEFAULT_CID_VERSION),
+            ..Default::default()
+        };
 
         let client = self.client.clone();
         let response = tokio::task::spawn_blocking(move || {
@@ -147,10 +151,12 @@ impl IpfsRpc {
             _ => DEFAULT_MH_TYPE,
         };
 
-        let mut options = BlockPutRequest::default();
-        options.mhtype = Some(mhtype);
-        options.cid_codec = Some(cic_codec);
-        options.pin = Some(true);
+        let options = BlockPutRequest {
+            mhtype: Some(mhtype),
+            cid_codec: Some(cic_codec),
+            pin: Some(true),
+            ..Default::default()
+        };
 
         let client = self.client.clone();
         let result = tokio::task::spawn_blocking(move || {

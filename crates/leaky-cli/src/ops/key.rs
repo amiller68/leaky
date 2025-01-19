@@ -33,7 +33,7 @@ impl Op for Key {
         // Check if the path is directory
         let path = std::path::Path::new(&self.key_path);
         if path.is_dir() {
-            let private_key_path = path.join(format!("{}", pretty_key_id));
+            let private_key_path = path.join(&pretty_key_id);
             let public_key_path = path.join(format!("{}.pem", pretty_key_id));
             std::fs::write(private_key_path, private_key_pem)?;
             std::fs::write(public_key_path, public_key_pem)?;

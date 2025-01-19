@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::path::Path;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -154,7 +155,7 @@ impl AppState {
     }
 
     pub fn load_on_disk_config(
-        path: &PathBuf,
+        path: &Path,
     ) -> Result<(OnDiskConfig, OnDiskState, ChangeLog, PreviousCid), AppStateSetupError> {
         if !path.exists() {
             return Err(AppStateSetupError::MissingDataPath);
@@ -191,7 +192,7 @@ impl AppState {
         let state_path = path.join(PathBuf::from(DEFAULT_STATE_NAME));
         let change_log_path = path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
 
-        let cid = mount.cid().clone();
+        let cid = *mount.cid();
         let manifest = mount.manifest();
 
         let on_disk_state = OnDiskState { cid, manifest };

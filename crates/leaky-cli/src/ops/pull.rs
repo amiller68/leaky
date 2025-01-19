@@ -50,7 +50,7 @@ impl Op for Pull {
         let root_cid = client.call(pull_root_req).await?;
         let cid = root_cid.cid();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
-        let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
+        let mount = Mount::pull(cid, &ipfs_rpc).await?;
 
         let pulled_items = mount
             .items()
@@ -120,8 +120,8 @@ impl Op for Pull {
         for path in to_prune {
             rm_file(&path)?;
         }
-        let cid = mount.cid().clone();
-        state.save(&mut mount, Some(&change_log), Some(cid))?;
+        let cid = *mount.cid();
+        state.save(&mount, Some(&change_log), Some(cid))?;
         Ok(cid)
     }
 }

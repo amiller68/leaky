@@ -1,9 +1,10 @@
-use axum::extract::{Json, Path, Query, State};
+use axum::extract::{Json, Path as AxumPath, Query, State};
 use axum::http::header::CONTENT_TYPE;
 use axum::response::{IntoResponse, Response};
 use image::{imageops::FilterType, ImageFormat};
 use regex::Regex;
 use std::io::Cursor;
+use std::path::Path;
 use std::path::PathBuf;
 use url::Url;
 
@@ -22,7 +23,7 @@ pub struct GetContentQuery {
 }
 pub async fn handler(
     State(state): State<AppState>,
-    Path(path): Path<PathBuf>,
+    AxumPath(path): AxumPath<PathBuf>,
     Query(query): Query<GetContentQuery>,
 ) -> Result<impl IntoResponse, GetContentError> {
     let db = state.sqlite_database();
@@ -32,7 +33,7 @@ pub async fn handler(
     // TODO: there's probably a better way to do this -- mounts always at least populated
     //  so maybe its fine to just serve whatever is there
     match maybe_root_cid {
-        Some(_rc) => {},
+        Some(_rc) => {}
         None => return Err(GetContentError::RootNotFound),
     };
     let mount = state.mount();
@@ -53,8 +54,9 @@ pub async fn handler(
                 return Ok((
                     http::StatusCode::OK,
                     [(CONTENT_TYPE, "application/json")],
-                    Json(ls)
-                ).into_response());
+                    Json(ls),
+                )
+                    .into_response());
             }
         }
         Err(MountError::PathNotDir(_)) => {}
@@ -84,7 +86,7 @@ pub async fn handler(
                     .cat(&path)
                     .await
                     .map_err(|_| GetContentError::NotFound)?;
-                let html = markdown_to_html(data, &base_path.to_path_buf(), &get_content_url);
+                let html = markdown_to_html(data, base_path, &get_content_url);
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
             } else {
                 tracing::info!(
@@ -174,7 +176,7 @@ fn calculate_dimensions(width: u32, height: u32) -> (u32, u32) {
     }
 }
 
-pub fn markdown_to_html(data: Vec<u8>, base_path: &PathBuf, get_content_url: &Url) -> String {
+pub fn markdown_to_html(data: Vec<u8>, base_path: &Path, get_content_url: &Url) -> String {
     let content = String::from_utf8(data).unwrap();
 
     let mut options = pulldown_cmark::Options::empty();
@@ -255,13 +257,12 @@ impl IntoResponse for GetContentError {
                 )
                     .into_response()
             }
-            GetContentError::RootNotFound | GetContentError::NotFound => {
-                (
-                    http::StatusCode::NOT_FOUND,
-                    [(CONTENT_TYPE, "text/plain")],
-                    "Not found"
-                ).into_response()
-            }
+            GetContentError::RootNotFound | GetContentError::NotFound => (
+                http::StatusCode::NOT_FOUND,
+                [(CONTENT_TYPE, "text/plain")],
+                "Not found",
+            )
+                .into_response(),
             GetContentError::UnsupportedImageFormat => (
                 http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 [(CONTENT_TYPE, "text/plain")],

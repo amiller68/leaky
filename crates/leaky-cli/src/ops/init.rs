@@ -46,8 +46,8 @@ impl Op for Init {
         let public_key_pem = key.public_key()?.export()?;
         // Check if the path is directory
         let path = std::path::Path::new(&self.key_path);
-        let private_key_path = path.join(format!("leaky.prv"));
-        let public_key_path = path.join(format!("leaky.pem"));
+        let private_key_path = path.join("leaky.prv");
+        let public_key_path = path.join("leaky.pem");
         if path.is_dir() && !private_key_path.exists() && !public_key_path.exists() {
             std::fs::write(private_key_path, private_key_pem)?;
             std::fs::write(public_key_path.clone(), public_key_pem)?;
@@ -66,6 +66,6 @@ impl Op for Init {
 
         state.save(&mount, None, Some(*mount.cid()))?;
 
-        Ok((mount.cid().clone(), public_key_path))
+        Ok((*mount.cid(), public_key_path))
     }
 }

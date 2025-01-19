@@ -33,11 +33,14 @@ impl Decode<'_, Sqlite> for DCid {
 }
 
 impl Encode<'_, Sqlite> for DCid {
-    fn encode_by_ref(&self, args: &mut Vec<SqliteArgumentValue<'_>>) -> IsNull {
+    fn encode_by_ref(
+        &self,
+        args: &mut Vec<SqliteArgumentValue<'_>>,
+    ) -> Result<IsNull, BoxDynError> {
         args.push(SqliteArgumentValue::Text(
             self.0.to_string_of_base(Base::Base32Lower).unwrap().into(),
         ));
-        IsNull::No
+        Ok(IsNull::No)
     }
 }
 
@@ -55,4 +58,30 @@ impl Type<Sqlite> for DCid {
 pub enum DCidError {
     #[error("invalid cid: {0}")]
     InvalidCid(#[from] leaky_common::error::CidError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_encode_decode_cid() -> Result<(), BoxDynError> {
+        // Create a test CID
+        let test_str = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
+        let cid = Cid::try_from(test_str).unwrap();
+        let dcid = DCid(cid);
+
+        // Test encoding
+        let mut args = Vec::new();
+        let _ = dcid.encode_by_ref(&mut args)?;
+        
+        // Verify encoded value
+        if let SqliteArgumentValue::Text(encoded) = &args[0] {
+            assert_eq!(encoded.as_ref(), test_str);
+        } else {
+            panic!("Expected Text variant");
+        }
+
+        Ok(())
+    }
 }

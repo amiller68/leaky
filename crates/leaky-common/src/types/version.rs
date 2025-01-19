@@ -20,24 +20,24 @@ impl Default for Version {
     }
 }
 
-impl Into<Ipld> for Version {
-    fn into(self) -> Ipld {
+impl From<Version> for Ipld {
+    fn from(version: Version) -> Self {
         let mut map = BTreeMap::new();
         map.insert(
             "build_profile".to_string(),
-            Ipld::String(self.build_profile.to_string()),
+            Ipld::String(version.build_profile.to_string()),
         );
         map.insert(
             "build_features".to_string(),
-            Ipld::String(self.build_features.to_string()),
+            Ipld::String(version.build_features.to_string()),
         );
         map.insert(
             "repo_version".to_string(),
-            Ipld::String(self.repo_version.to_string()),
+            Ipld::String(version.repo_version.to_string()),
         );
         map.insert(
             "version".to_string(),
-            Ipld::String(self.version.to_string()),
+            Ipld::String(version.version.to_string()),
         );
         Ipld::Map(map)
     }

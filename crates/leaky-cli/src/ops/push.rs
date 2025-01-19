@@ -39,8 +39,8 @@ impl Op for Push {
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
         let mut client = state.client()?;
-        let cid = state.cid().clone();
-        let previous_cid = state.previous_cid().clone();
+        let cid = *state.cid();
+        let previous_cid = *state.previous_cid();
 
         if cid == previous_cid {
             println!("No changes to push");
@@ -53,7 +53,7 @@ impl Op for Push {
 
         mount.set_previous(previous_cid);
         mount.push().await?;
-        let cid = mount.cid().clone();
+        let cid = *mount.cid();
 
         let push_root_req = PushRoot {
             cid: cid.to_string(),
@@ -71,12 +71,12 @@ impl Op for Push {
                     updates.remove(path);
                 }
                 _ => {
-                    updates.insert(path.clone(), (hash.clone(), ChangeType::Base));
+                    updates.insert(path.clone(), (*hash, ChangeType::Base));
                 }
             }
         }
 
-        state.save(&mount, Some(&updates), Some(cid.clone()))?;
+        state.save(&mount, Some(&updates), Some(cid))?;
 
         Ok(cid)
     }
