@@ -74,7 +74,7 @@ mod tests {
         // Test encoding
         let mut args = Vec::new();
         let _ = dcid.encode_by_ref(&mut args)?;
-        
+
         // Verify encoded value
         if let SqliteArgumentValue::Text(encoded) = &args[0] {
             assert_eq!(encoded.as_ref(), test_str);

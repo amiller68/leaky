@@ -539,8 +539,7 @@ mod test {
 
     async fn empty_mount() -> Mount {
         let ipfs_rpc = IpfsRpc::default();
-        let mount = Mount::init(&ipfs_rpc).await.unwrap();
-        mount
+        Mount::init(&ipfs_rpc).await.unwrap()
     }
 
     #[tokio::test]
@@ -618,7 +617,7 @@ mod test {
             .add(&PathBuf::from("/bar"), data, None, true)
             .await
             .unwrap();
-        let cid = mount.cid().clone();
+        let cid = *mount.cid();
         mount.push().await.unwrap();
 
         let mount = Mount::pull(cid, &IpfsRpc::default()).await.unwrap();
