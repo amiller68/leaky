@@ -21,9 +21,7 @@ pub fn ipld_to_cid<T: Into<Ipld>>(ipld: T) -> Cid {
 }
 
 pub fn ipld_to_block<T: Into<Ipld>>(ipld: T) -> Block<DefaultParams> {
-    
-    Block::<DefaultParams>::encode(DEFAULT_IPLD_CODEC, DEFAULT_HASH_CODE, &ipld.into())
-        .unwrap()
+    Block::<DefaultParams>::encode(DEFAULT_IPLD_CODEC, DEFAULT_HASH_CODE, &ipld.into()).unwrap()
 }
 
 pub fn block_from_data(cid: Cid, data: Vec<u8>) -> Result<Block<DefaultParams>, anyhow::Error> {

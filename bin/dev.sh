@@ -93,8 +93,6 @@ case ${1:-} in
         cd ./data/test
         cargo run --bin leaky-cli -- init --remote http://localhost:3001 --key-path ../pems \
             && cargo run --bin leaky-cli -- add \
-            && cargo run --bin leaky-cli -- tag --path /writing/by_the_ocean.md --value '{"title": "by the ocean", "description": "i want to go back" }' \
-            && cargo run --bin leaky-cli -- tag --path /writing/backpack-life.md --value '{"title": "backpack lyfe", "description": "oof" }' --backdate 2024-1-1 \
             && cargo run --bin leaky-cli -- push
         ;;
     logs)

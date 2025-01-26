@@ -5,11 +5,12 @@ use leaky_common::prelude::*;
 use super::utils;
 use crate::change_log::{ChangeLog, ChangeType};
 
-pub async fn diff(leaky: &Mount, base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
+pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
     let base: &mut ChangeLog = base;
     let mut update = base.clone();
     let next = utils::fs_tree()?;
     let default_hash = Cid::default();
+    let ipfs = IpfsRpc::default();
 
     // Insert the root directory hash into the change_log for comparison
     // This should always just get matched out and removed
@@ -50,7 +51,7 @@ pub async fn diff(leaky: &Mount, base: &mut ChangeLog) -> Result<ChangeLog, Diff
                 // strip off the next object and log the addition
                 if next_path < base_path {
                     if !next_path.is_dir() {
-                        let hash = utils::hash_file(&next_path, leaky).await?;
+                        let hash = utils::hash_file(&next_path, &ipfs).await?;
                         update.insert(
                             next_path.clone(),
                             (hash, ChangeType::Added { modified: false }),
@@ -67,7 +68,7 @@ pub async fn diff(leaky: &Mount, base: &mut ChangeLog) -> Result<ChangeLog, Diff
                     if !next_tree.is_dir() {
                         // If the hashes are different then the file was modified
                         // strip off the next object and log the modification
-                        let next_hash = utils::hash_file(&next_path, leaky).await?;
+                        let next_hash = utils::hash_file(&next_path, &ipfs).await?;
                         if base_hash != &next_hash {
                             match base_type {
                                 // If it has been added before, then it was modified
@@ -102,7 +103,7 @@ pub async fn diff(leaky: &Mount, base: &mut ChangeLog) -> Result<ChangeLog, Diff
             // Theres more new files than old, so this file was added
             (Some((next_tree, next_path)), None) => {
                 if !next_tree.is_dir() {
-                    let hash = utils::hash_file(&next_path, leaky).await?;
+                    let hash = utils::hash_file(&next_path, &ipfs).await?;
                     update.insert(
                         next_path.clone(),
                         (hash, ChangeType::Added { modified: true }),

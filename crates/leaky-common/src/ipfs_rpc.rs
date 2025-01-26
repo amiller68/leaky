@@ -192,8 +192,8 @@ pub enum IpfsRpcError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
     use libipld::IpldCodec;
+    use std::collections::BTreeMap;
 
     /// Generate a random 1 KB reader
     fn random_reader() -> impl Read {

@@ -9,10 +9,10 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
-use crate::types::{ipld_to_cid, NodeError, Object};
 use crate::types::NodeLink;
 use crate::types::Schema;
-use crate::types::{Cid, Manifest, Node, Ipld};
+use crate::types::{ipld_to_cid, NodeError, Object};
+use crate::types::{Cid, Ipld, Manifest, Node};
 
 // NOTE: this is really just used as a node cache, but right now it has some
 //  mixed responsibilities
@@ -128,13 +128,7 @@ impl Mount {
         self.manifest.lock().set_previous(previous);
     }
 
-    pub async fn add<R>(
-        &mut self,
-        path: &Path,
-        data: Option<(R, bool)>,
-        object: Option<&Object>,
-        schema: Option<Schema>,
-    ) -> Result<(), MountError>
+    pub async fn add<R>(&mut self, path: &Path, data: (R, bool)) -> Result<(), MountError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
@@ -143,15 +137,14 @@ impl Mount {
         let path = clean_path(path);
 
         let link = match data {
-            Some((d, true)) => {
+            (d, true) => {
                 let cid = Self::hash_data(d, ipfs_rpc).await?;
                 Some(cid)
             }
-            Some((d, false)) => {
+            (d, false) => {
                 let cid = Self::add_data(d, ipfs_rpc).await?;
                 Some(cid)
             }
-            None => None,
         };
 
         let data_node_cid = *self.manifest.lock().data();
@@ -159,17 +152,82 @@ impl Mount {
         let consumed_path = PathBuf::from("/");
         let remaining_path = path;
 
-        let maybe_new_data_node_cid =
-            Self::upsert_node(
-                &mut node,
-                &consumed_path,
-                &remaining_path,
-                link,
-                object,
-                schema.map(|s| (s, true)),
-                block_cache,
-            )
-            .await?;
+        let maybe_new_data_node_cid = Self::upsert_node(
+            &mut node,
+            &consumed_path,
+            &remaining_path,
+            link,
+            None,
+            None,
+            block_cache,
+        )
+        .await?;
+
+        // if a change occurred, update the manifest and the cid
+        if let Some(new_data_node_cid) = maybe_new_data_node_cid {
+            self.manifest.lock().set_data(new_data_node_cid);
+            let manifest = self.manifest.lock().clone();
+            self.cid = Self::put::<Manifest>(&manifest, ipfs_rpc).await?;
+        }
+
+        // NOTE: this is kinda arbitray, we probably would be fine with OK(())
+        // for now return the cid direct to the link
+        Ok(())
+    }
+
+    pub async fn set_schema(&mut self, path: &Path, schema: Schema) -> Result<(), MountError> {
+        let ipfs_rpc = &self.ipfs_rpc;
+        let block_cache = &self.block_cache;
+        let path = clean_path(path);
+
+        let data_node_cid = *self.manifest.lock().data();
+        let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
+        let consumed_path = PathBuf::from("/");
+        let remaining_path = path;
+
+        let maybe_new_data_node_cid = Self::upsert_node(
+            &mut node,
+            &consumed_path,
+            &remaining_path,
+            None,
+            None,
+            Some((schema, true)),
+            block_cache,
+        )
+        .await?;
+
+        // if a change occurred, update the manifest and the cid
+        if let Some(new_data_node_cid) = maybe_new_data_node_cid {
+            self.manifest.lock().set_data(new_data_node_cid);
+            let manifest = self.manifest.lock().clone();
+            self.cid = Self::put::<Manifest>(&manifest, ipfs_rpc).await?;
+        }
+
+        // NOTE: this is kinda arbitray, we probably would be fine with OK(())
+        // for now return the cid direct to the link
+        Ok(())
+    }
+
+    pub async fn tag_object(&mut self, path: &Path, object: Object) -> Result<(), MountError> {
+        let ipfs_rpc = &self.ipfs_rpc;
+        let block_cache = &self.block_cache;
+        let path = clean_path(path);
+
+        let data_node_cid = *self.manifest.lock().data();
+        let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
+        let consumed_path = PathBuf::from("/");
+        let remaining_path = path;
+
+        let maybe_new_data_node_cid = Self::upsert_node(
+            &mut node,
+            &consumed_path,
+            &remaining_path,
+            None,
+            Some(&object),
+            None,
+            block_cache,
+        )
+        .await?;
 
         // if a change occurred, update the manifest and the cid
         if let Some(new_data_node_cid) = maybe_new_data_node_cid {
@@ -324,11 +382,8 @@ impl Mount {
 
         // Iterate over links using get_links()
         for (_, link) in node.get_links().iter() {
-            match link {
-                // NOTE: recurse over just node links
-                NodeLink::Node(cid) => Self::pull_nodes(cid, block_cache, ipfs_rpc).await?,
-                // NOTE: ignore data links
-                _ => (),
+            if let NodeLink::Node(cid) = link {
+                Self::pull_nodes(cid, block_cache, ipfs_rpc).await?;
             }
         }
 
@@ -352,7 +407,7 @@ impl Mount {
         maybe_link: Option<Cid>,
         // set an object to upsert
         maybe_object: Option<&Object>,
-        // NOTE: you can only persist schemas on nodes, this argument 
+        // NOTE: you can only persist schemas on nodes, this argument
         //  is mostly a way to carry over the schema from the parent node
         //  In order to persist a schema on a node you must set both the
         //  link and the object to None and set the schema to persist
@@ -423,7 +478,7 @@ impl Mount {
                 // -- we potentially might be upserting metadata on a data link that
                 //    doesn't exist
                 else {
-                    // so check if the link exists 
+                    // so check if the link exists
                     match node.get_link(&next_link) {
                         // if we have a node
                         Some(NodeLink::Node(cid)) => {
@@ -474,7 +529,7 @@ impl Mount {
                 // update the paths
                 let consumed_path = consumed_path.join(&next_link);
                 let remaining_path = remaining_path.iter().skip(1).collect::<PathBuf>();
-                
+
                 // get the next link
                 let mut next_node = match node.get_link(&next_link) {
                     // if we've run into a data node, we need to error out -- there's no where else to traverse
@@ -661,7 +716,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/foo"), (data, true))
             .await
             .unwrap();
     }
@@ -673,7 +728,11 @@ mod test {
         let mut object = Object::default();
         object.insert("foo".to_string(), Ipld::String("bar".to_string()));
         mount
-            .add(&PathBuf::from("/foo"), Some((data, true)), Some(&object), None)
+            .add(&PathBuf::from("/foo"), (data, true))
+            .await
+            .unwrap();
+        mount
+            .tag_object(&PathBuf::from("/foo"), object)
             .await
             .unwrap();
     }
@@ -683,7 +742,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/bar"), Some((data, false)), None, None)
+            .add(&PathBuf::from("/bar"), (data, false))
             .await
             .unwrap();
         let get_data = mount.cat(&PathBuf::from("/bar")).await.unwrap();
@@ -695,7 +754,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/bar"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/bar"), (data, true))
             .await
             .unwrap();
         let links = mount.ls(&PathBuf::from("/")).await.unwrap();
@@ -707,7 +766,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bar/buzz"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/foo/bar/buzz"), (data, true))
             .await
             .unwrap();
     }
@@ -717,7 +776,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bar"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/foo/bar"), (data, true))
             .await
             .unwrap();
         mount.rm(&PathBuf::from("/foo/bar")).await.unwrap();
@@ -728,7 +787,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/bar"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/bar"), (data, true))
             .await
             .unwrap();
         let cid = *mount.cid();
@@ -744,13 +803,13 @@ mod test {
 
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bar"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/foo/bar"), (data, true))
             .await
             .unwrap();
 
         let data = "bang".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bug"), Some((data, true)), None, None)
+            .add(&PathBuf::from("/foo/bug"), (data, true))
             .await
             .unwrap();
     }

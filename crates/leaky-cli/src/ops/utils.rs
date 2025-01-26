@@ -24,7 +24,7 @@ pub fn fs_tree() -> Result<FsTree> {
     }
 }
 
-pub async fn hash_file(path: &PathBuf, mount: &Mount) -> Result<Cid> {
+pub async fn hash_file(path: &PathBuf, ipfs: &IpfsRpc) -> Result<Cid> {
     if !path.exists() {
         return Err(anyhow::anyhow!("File does not exist"));
     }
@@ -34,7 +34,7 @@ pub async fn hash_file(path: &PathBuf, mount: &Mount) -> Result<Cid> {
 
     let file = std::fs::File::open(path)?;
 
-    let cid = mount._hash_data(file).await?;
+    let cid = ipfs.hash_data(file).await?;
 
     Ok(cid)
 }

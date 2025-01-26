@@ -50,19 +50,20 @@ impl Op for Pull {
         let root_cid = client.call(pull_root_req).await?;
         let cid = root_cid.cid();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
+        let local_ipfs_rpc = IpfsRpc::default();
         let mount = Mount::pull(cid, &ipfs_rpc).await?;
 
         let pulled_items = mount
-            .items()
+            .objects()
             .await?
             .iter()
-            .map(|(path, cid)| (path.strip_prefix("/").unwrap().to_path_buf(), *cid))
+            .map(|(path, cid)| (path.strip_prefix("/").unwrap().to_path_buf(), cid.clone()))
             .collect::<Vec<_>>();
 
         // Insert everything in the change log
         let mut change_log = ChangeLog::new();
-        for (path, cid) in pulled_items.iter() {
-            change_log.insert(path.clone(), (*cid, ChangeType::Base));
+        for (path, link) in pulled_items.iter() {
+            change_log.insert(path.clone(), (*link.cid(), ChangeType::Base));
         }
 
         let current_fs_tree = utils::fs_tree()?;
@@ -81,26 +82,26 @@ impl Op for Pull {
 
         loop {
             match (pi_next, ci_next.clone()) {
-                (Some((pi_path, pi_cid)), Some((ci_tree, ci_path))) => {
+                (Some((pi_path, pi_link)), Some((ci_tree, ci_path))) => {
                     // First check if ci is a dir, since we skip those
                     if ci_tree.is_dir() {
                         ci_next = ci_iter.next();
                         continue;
                     }
                     if pi_path < &ci_path {
-                        to_pull.push((pi_path, pi_cid));
+                        to_pull.push((pi_path, pi_link.cid()));
                     } else if pi_path > &ci_path {
                         to_prune.push(ci_path);
-                    } else if file_needs_pull(&mount, &ci_path, pi_cid).await?
-                        && *pi_cid != Cid::default()
+                    } else if file_needs_pull(&local_ipfs_rpc, &ci_path, pi_link.cid()).await?
+                        && *pi_link.cid() != Cid::default()
                     {
-                        to_pull.push((pi_path, pi_cid));
+                        to_pull.push((pi_path, pi_link.cid()));
                     }
                     pi_next = pi_iter.next();
                     ci_next = ci_iter.next();
                 }
                 (Some(pi), None) => {
-                    to_pull.push((&pi.0, &pi.1));
+                    to_pull.push((&pi.0, pi.1.cid()));
                     pi_next = pi_iter.next();
                 }
                 (None, Some(ci)) => {
@@ -126,14 +127,18 @@ impl Op for Pull {
     }
 }
 
-pub async fn file_needs_pull(mount: &Mount, path: &PathBuf, cid: &Cid) -> Result<bool, PullError> {
+pub async fn file_needs_pull(
+    ipfs_rpc: &IpfsRpc,
+    path: &PathBuf,
+    cid: &Cid,
+) -> Result<bool, PullError> {
     if !path.exists() {
         return Ok(true);
     } else if path.is_dir() {
         return Err(PullError::PathIsDirectory(path.clone()));
     }
 
-    let hash = utils::hash_file(path, mount).await?;
+    let hash = utils::hash_file(path, ipfs_rpc).await?;
     if hash == *cid {
         Ok(false)
     } else {

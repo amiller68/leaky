@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
+use serde::{Deserialize, Serialize};
+
 use super::ipld::{Block, Cid, DefaultParams, Ipld, IpldCodec};
 use super::object::{Object, ObjectError};
 use super::schema::{Schema, SchemaError};
@@ -13,7 +15,7 @@ use super::{DEFAULT_HASH_CODE, DEFAULT_IPLD_CODEC};
 const NODE_OBJECT_KEY: &str = ".metadata";
 const NODE_SCHEMA_KEY: &str = ".schema";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NodeLink {
     Data(Cid, Option<Object>),
     Node(Cid),
@@ -37,15 +39,13 @@ impl From<NodeLink> for Ipld {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Node {
     /// Links to other nodes/data
     links: BTreeMap<String, NodeLink>,
     /// Object defs for data in this directory
     schema: Option<Schema>,
 }
-
 
 // TODO: might be nice to do some validation that data links point to
 //  codecs that specify the correct cid type
@@ -243,9 +243,9 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipfs_rpc::IpfsRpc;
     use crate::types::SchemaProperty;
     use crate::types::SchemaType;
-    use crate::ipfs_rpc::IpfsRpc;
 
     #[tokio::test]
     async fn test_schema_validation() {

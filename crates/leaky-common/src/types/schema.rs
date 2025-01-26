@@ -114,7 +114,7 @@ impl TryFrom<Ipld> for SchemaProperty {
 }
 
 /// Represents a complete schema for object metadata
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Schema(BTreeMap<String, SchemaProperty>);
 
 impl Schema {

@@ -12,6 +12,7 @@ pub mod prelude {
     };
     pub use crate::ipfs_rpc::IpfsRpc;
     pub use crate::mount::{BlockCache, Mount, MountError};
+    pub use crate::types::Schema;
     pub use crate::types::{Cid, Ipld, Manifest, MhCode, Object, Version};
 }
 
