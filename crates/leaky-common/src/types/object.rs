@@ -12,7 +12,10 @@ pub const LEGACY_METADATA_KEY: &str = "metadata";
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Object {
+    // if not set when deserializing, set to current time
+    #[serde(default = "OffsetDateTime::now_utc")]
     created_at: OffsetDateTime,
+    #[serde(default = "OffsetDateTime::now_utc")]
     updated_at: OffsetDateTime,
     properties: BTreeMap<String, Ipld>,
 }

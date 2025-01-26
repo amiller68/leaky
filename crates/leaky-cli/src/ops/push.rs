@@ -49,8 +49,10 @@ impl Op for Push {
 
         let mut change_log = state.change_log().clone();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
+        println!("pulling cid: {:?}", cid);
         let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
 
+        println!("pushing cid: {:?}", cid);
         mount.set_previous(previous_cid);
         mount.push().await?;
         let cid = *mount.cid();

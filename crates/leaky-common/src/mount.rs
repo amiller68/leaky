@@ -278,9 +278,11 @@ impl Mount {
     }
 
     pub async fn ls(&self, path: &Path) -> Result<Vec<(String, NodeLink)>, MountError> {
+        println!("ls: {:?}", path);
         let block_cache = &self.block_cache;
         let path = clean_path(path);
         let data_node_cid = *self.manifest.lock().data();
+        println!("data_node_cid: {:?}", data_node_cid);
         let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
 
         for part in path.iter() {
@@ -292,6 +294,8 @@ impl Mount {
                 .await
                 .map_err(|_| MountError::PathNotDir(path.clone()))?;
         }
+
+        println!("node: {:?}", node);
 
         let links: Vec<_> = node
             .get_links()
@@ -371,6 +375,7 @@ impl Mount {
         block_cache: &Arc<Mutex<BlockCache>>,
         ipfs_rpc: Option<&IpfsRpc>,
     ) -> Result<(), MountError> {
+        println!("pulling node: {}", cid.to_string());
         let node = if let Some(ipfs_rpc) = ipfs_rpc {
             Self::get::<Node>(cid, ipfs_rpc).await?
         } else {
@@ -383,6 +388,7 @@ impl Mount {
         // Iterate over links using get_links()
         for (_, link) in node.get_links().iter() {
             if let NodeLink::Node(cid) = link {
+                println!("pulling sub node: {}", cid.to_string());
                 Self::pull_nodes(cid, block_cache, ipfs_rpc).await?;
             }
         }
@@ -633,10 +639,13 @@ impl Mount {
 
     async fn get<B>(cid: &Cid, ipfs_rpc: &IpfsRpc) -> Result<B, MountError>
     where
-        B: TryFrom<Ipld>,
+        B: TryFrom<Ipld> + std::fmt::Debug + Send,
     {
+        println!("getting ipld for cid: {}", cid.to_string());
         let ipld = ipfs_rpc.get_ipld(cid).await?;
+        println!("got ipld for cid: {:?}", ipld);
         let object = B::try_from(ipld).map_err(|_| MountError::Ipld)?;
+        println!("got object for cid: {:?}", object);
         Ok(object)
     }
 

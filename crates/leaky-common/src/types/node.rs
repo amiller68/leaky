@@ -114,7 +114,10 @@ impl TryFrom<Ipld> for Node {
                     // match on what codec is used
                     None => match IpldCodec::try_from(cid.codec()).unwrap() {
                         // this is just data without an object
-                        IpldCodec::Raw => links.insert(key, NodeLink::Data(cid, None)),
+                        IpldCodec::Raw | IpldCodec::DagPb => {
+                            links.insert(key, NodeLink::Data(cid, None))
+                        }
+
                         _ => links.insert(key, NodeLink::Node(cid)),
                     },
                 };
@@ -175,11 +178,17 @@ impl Node {
         if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
             return Err(NodeError::ReservedName(name.to_string()));
         }
+        println!("putting new link: {} @ {}", name, cid.to_string());
         match IpldCodec::try_from(cid.codec()).unwrap() {
-            IpldCodec::Raw => self
-                .links
-                .insert(name.to_string(), NodeLink::Data(cid, None)),
-            _ => self.links.insert(name.to_string(), NodeLink::Node(cid)),
+            IpldCodec::DagCbor => {
+                println!("dag cbor");
+                self.links.insert(name.to_string(), NodeLink::Node(cid));
+            }
+            _ => {
+                println!("raw or other");
+                self.links
+                    .insert(name.to_string(), NodeLink::Data(cid, None));
+            }
         };
         Ok(())
     }

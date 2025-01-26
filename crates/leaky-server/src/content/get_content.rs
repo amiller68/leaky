@@ -42,6 +42,12 @@ pub async fn handler(
     let path = PathBuf::from("/").join(path);
 
     let ls_result = mount.ls(&path).await;
+    tracing::info!(
+        "GET {} | {:?} | ls_result: {:?}",
+        path.display(),
+        query,
+        ls_result
+    );
     match ls_result {
         Ok(ls) => {
             if !ls.is_empty() {
