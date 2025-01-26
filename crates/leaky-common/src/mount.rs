@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::io::Read;
@@ -10,10 +9,13 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::ipfs_rpc::{IpfsRpc, IpfsRpcError};
-use crate::types::{
-    Block, Cid, DagCborCodec, DefaultParams, Ipld, IpldCodec, Manifest, MhCode, Node, Object,
-};
+use crate::types::{ipld_to_cid, NodeError, Object};
+use crate::types::NodeLink;
+use crate::types::Schema;
+use crate::types::{Cid, Manifest, Node, Ipld};
 
+// NOTE: this is really just used as a node cache, but right now it has some
+//  mixed responsibilities
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct BlockCache(pub HashMap<String, Ipld>);
 
@@ -82,7 +84,7 @@ impl Mount {
         let manifest = Self::get::<Manifest>(&cid, ipfs_rpc).await?;
         let block_cache = Arc::new(Mutex::new(BlockCache::default()));
 
-        Self::pull_links(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
+        Self::pull_nodes(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
 
         Ok(Self {
             cid,
@@ -97,7 +99,7 @@ impl Mount {
         let manifest = Self::get::<Manifest>(&cid, ipfs_rpc).await?;
         let block_cache = Arc::new(Mutex::new(BlockCache::default()));
 
-        Self::pull_links(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
+        Self::pull_nodes(manifest.data(), &block_cache, Some(ipfs_rpc)).await?;
 
         self.manifest = Arc::new(Mutex::new(manifest));
         self.block_cache = block_cache;
@@ -129,10 +131,10 @@ impl Mount {
     pub async fn add<R>(
         &mut self,
         path: &Path,
-        data: R,
-        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-        hash_only: bool,
-    ) -> Result<Cid, MountError>
+        data: Option<(R, bool)>,
+        object: Option<&Object>,
+        schema: Option<Schema>,
+    ) -> Result<(), MountError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
@@ -140,62 +142,44 @@ impl Mount {
         let block_cache = &self.block_cache;
         let path = clean_path(path);
 
-        let data_cid = if hash_only {
-            Self::hash_data(data, ipfs_rpc).await?
-        } else {
-            Self::add_data(data, ipfs_rpc).await?
+        let link = match data {
+            Some((d, true)) => {
+                let cid = Self::hash_data(d, ipfs_rpc).await?;
+                Some(cid)
+            }
+            Some((d, false)) => {
+                let cid = Self::add_data(d, ipfs_rpc).await?;
+                Some(cid)
+            }
+            None => None,
         };
 
         let data_node_cid = *self.manifest.lock().data();
+        let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
+        let consumed_path = PathBuf::from("/");
+        let remaining_path = path;
 
-        let maybe_new_data_node_cid = Self::upsert_link_and_object(
-            &data_node_cid,
-            &path,
-            Some(&data_cid),
-            maybe_metadata,
-            None,
-            ipfs_rpc,
-            block_cache,
-        )
-        .await?;
+        let maybe_new_data_node_cid =
+            Self::upsert_node(
+                &mut node,
+                &consumed_path,
+                &remaining_path,
+                link,
+                object,
+                schema.map(|s| (s, true)),
+                block_cache,
+            )
+            .await?;
 
+        // if a change occurred, update the manifest and the cid
         if let Some(new_data_node_cid) = maybe_new_data_node_cid {
             self.manifest.lock().set_data(new_data_node_cid);
             let manifest = self.manifest.lock().clone();
             self.cid = Self::put::<Manifest>(&manifest, ipfs_rpc).await?;
         }
 
-        Ok(data_cid)
-    }
-
-    pub async fn tag(
-        &mut self,
-        path: &Path,
-        metadata: &BTreeMap<String, Ipld>,
-        backdate: Option<chrono::NaiveDate>,
-    ) -> Result<(), MountError> {
-        let ipfs_rpc = &self.ipfs_rpc;
-        let block_cache = &self.block_cache;
-        let path = clean_path(path);
-
-        let data_node_cid = *self.manifest.lock().data();
-        let maybe_new_data_node_cid = Self::upsert_link_and_object(
-            &data_node_cid,
-            &path,
-            None,
-            Some(metadata),
-            backdate,
-            ipfs_rpc,
-            block_cache,
-        )
-        .await?;
-
-        if let Some(new_data_node_cid) = maybe_new_data_node_cid {
-            self.manifest.lock().set_data(new_data_node_cid);
-            let manifest = self.manifest.lock().clone();
-            self.cid = Self::put::<Manifest>(&manifest, ipfs_rpc).await?;
-        }
-
+        // NOTE: this is kinda arbitray, we probably would be fine with OK(())
+        // for now return the cid direct to the link
         Ok(())
     }
 
@@ -205,13 +189,16 @@ impl Mount {
         let path = clean_path(path);
 
         let data_node_cid = *self.manifest.lock().data();
-        let maybe_new_data_node_cid = Self::upsert_link_and_object(
-            &data_node_cid,
-            &path,
+        let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
+        let consumed_path = PathBuf::from("/");
+        let remaining_path = path;
+        let maybe_new_data_node_cid = Self::upsert_node(
+            &mut node,
+            &consumed_path,
+            &remaining_path,
             None,
             None,
             None,
-            ipfs_rpc,
             block_cache,
         )
         .await?;
@@ -232,10 +219,7 @@ impl Mount {
         Ok(())
     }
 
-    pub async fn ls(
-        &self,
-        path: &Path,
-    ) -> Result<Vec<(String, (Cid, Option<Object>))>, MountError> {
+    pub async fn ls(&self, path: &Path) -> Result<Vec<(String, NodeLink)>, MountError> {
         let block_cache = &self.block_cache;
         let path = clean_path(path);
         let data_node_cid = *self.manifest.lock().data();
@@ -243,10 +227,10 @@ impl Mount {
 
         for part in path.iter() {
             let next = part.to_string_lossy().to_string();
-            let next_cid = node
+            let next_link = node
                 .get_link(&next)
                 .ok_or(MountError::PathNotDir(path.clone()))?;
-            node = Self::get_cache::<Node>(&next_cid, block_cache)
+            node = Self::get_cache::<Node>(next_link.cid(), block_cache)
                 .await
                 .map_err(|_| MountError::PathNotDir(path.clone()))?;
         }
@@ -254,17 +238,14 @@ impl Mount {
         let links: Vec<_> = node
             .get_links()
             .iter()
-            .map(|(name, link)| {
-                let object = node.get_object(name);
-                (name.clone(), (*link, object))
-            })
+            .map(|(name, link)| (name.clone(), link.clone()))
             .collect();
 
         Ok(links)
     }
 
-    pub async fn items(&self) -> Result<Vec<(PathBuf, Cid)>, MountError> {
-        let mut sorted_items = self.recursive_items(&PathBuf::from("/")).await?;
+    pub async fn objects(&self) -> Result<Vec<(PathBuf, NodeLink)>, MountError> {
+        let mut sorted_items = self.ls_deep(&PathBuf::from("/"), true).await?;
         sorted_items.sort_by(|a, b| a.0.cmp(&b.0));
         Ok(sorted_items)
     }
@@ -285,19 +266,23 @@ impl Mount {
             let next_cid = node
                 .get_link(&next)
                 .ok_or(MountError::PathNotFile(path.clone()))?;
-            node = Self::get_cache::<Node>(&next_cid, block_cache).await?;
+            node = Self::get_cache::<Node>(next_cid.cid(), block_cache).await?;
         }
 
         let link = node
             .get_link(&file_name)
             .ok_or(MountError::PathNotFile(path.clone()))?;
-        let data = Self::cat_data(&link, ipfs_rpc).await?;
+        let data = Self::cat_data(link.cid(), ipfs_rpc).await?;
 
         Ok(data)
     }
 
     #[async_recursion::async_recursion]
-    async fn recursive_items(&self, path: &Path) -> Result<Vec<(PathBuf, Cid)>, MountError> {
+    async fn ls_deep(
+        &self,
+        path: &Path,
+        objects_only: bool,
+    ) -> Result<Vec<(PathBuf, NodeLink)>, MountError> {
         let mut items = vec![];
         let links = match self.ls(path).await {
             Ok(l) => l,
@@ -305,15 +290,17 @@ impl Mount {
             Err(err) => return Err(err),
         };
 
-        for (name, (_link, object)) in links {
+        for (name, link) in links {
             let mut current_path = path.to_path_buf();
             current_path.push(&name);
 
-            if object.is_none() {
-                let mut next_items = self.recursive_items(&current_path).await?;
-                items.append(&mut next_items);
+            if let NodeLink::Data(cid, object) = link {
+                if !(objects_only && object.is_some()) {
+                    items.push((current_path, NodeLink::Data(cid, object)));
+                }
             } else {
-                items.push((current_path, _link));
+                let mut _items = self.ls_deep(&current_path, objects_only).await?;
+                items.append(&mut _items);
             }
         }
 
@@ -321,7 +308,7 @@ impl Mount {
     }
 
     #[async_recursion::async_recursion]
-    async fn pull_links(
+    async fn pull_nodes(
         cid: &Cid,
         block_cache: &Arc<Mutex<BlockCache>>,
         ipfs_rpc: Option<&IpfsRpc>,
@@ -334,86 +321,228 @@ impl Mount {
         block_cache
             .lock()
             .insert(cid.to_string(), node.clone().into());
-        for (_name, link) in node.iter() {
-            if let Ipld::Link(cid) = link {
-                // NOTE: this is kinda janky, but dont want to pull dag pb links
-                //  need to figure out how to handle this better
-                if cid.codec() != 0x55 && cid.codec() != 0x70 {
-                    Self::pull_links(cid, block_cache, ipfs_rpc).await?;
-                }
+
+        // Iterate over links using get_links()
+        for (_, link) in node.get_links().iter() {
+            match link {
+                // NOTE: recurse over just node links
+                NodeLink::Node(cid) => Self::pull_nodes(cid, block_cache, ipfs_rpc).await?,
+                // NOTE: ignore data links
+                _ => (),
             }
         }
 
         Ok(())
     }
 
+    /// recursive upsert of a link into a node
+    ///
+    /// returns:
+    ///  - None if no changes were made -- (removing something that dne)
+    ///  - Some(Cid::default()) if the node was removed
+    ///  - Some(cid) if the node was upserted
     #[async_recursion::async_recursion]
-    async fn upsert_link_and_object(
-        cid: &Cid,
-        path: &Path,
-        maybe_link: Option<&Cid>,
-        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-        maybe_backdate: Option<chrono::NaiveDate>,
-        _ipfs_rpc: &IpfsRpc,
+    async fn upsert_node(
+        node: &mut Node,
+        // keep track of the path we've already traversed
+        consumed_path: &Path,
+        // the path we're trying to upsert
+        remaining_path: &Path,
+        // set to None to remove the link
+        maybe_link: Option<Cid>,
+        // set an object to upsert
+        maybe_object: Option<&Object>,
+        // NOTE: you can only persist schemas on nodes, this argument 
+        //  is mostly a way to carry over the schema from the parent node
+        //  In order to persist a schema on a node you must set both the
+        //  link and the object to None and set the schema to persist
+        // set an schema to apply and whether to persist it
+        maybe_schema: Option<(Schema, bool)>,
         block_cache: &Arc<Mutex<BlockCache>>,
     ) -> Result<Option<Cid>, MountError> {
-        let is_rm = maybe_link.is_none() && maybe_metadata.is_none();
-        let mut node = Self::get_cache::<Node>(cid, block_cache).await?;
-        let next = path.iter().next().unwrap().to_string_lossy().to_string();
+        // determine if this is a rm or upsert (shouldn't really matter what schema is here)
+        let is_rm = maybe_link.is_none() && maybe_object.is_none();
+        // get the next link to follow
+        let next_link = remaining_path
+            .iter()
+            .next()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        // NOTE: i dont like this behavior but its what we have for now
+        // child schemas take precedence over parent schemas
+        // -- unless we're persisting to a child
+        let schema = match node.schema().cloned() {
+            Some(s) => Some((s, false)),
+            None => maybe_schema
+                .as_ref()
+                .map(|(s, persist)| (s.clone(), *persist)),
+        };
 
-        match path.iter().count() {
+        // determine where we are in the path
+        match remaining_path.iter().count() {
+            // this should never happen
             0 => panic!("path is empty"),
+            // if this is the last part of the path, we need to upsert the link
             1 => {
+                // NOTE this effectively doesnt happen since logically
+                //  we should be able to set schemas and then upser a link
+                // if the schema is not none, and we're here, then we're
+                //  overwriting the schema on the node
+                // match maybe_schema {
+                //     Some((schema, true)) => {
+                //         // upsert the schema and set it on the node
+                //         node.set_schema(schema);
+                //     }
+                //     _ => (),
+                // };
+                // let schema = node.schema().cloned();
+
+                // if this is a rm, we need to remove the link
                 if is_rm {
-                    if node.del(&next).0.is_none() {
+                    let link = node.del(&next_link);
+                    // double check that the link is there
+                    // if nothing was removed, return None
+                    if link.is_none() {
                         return Ok(None);
                     }
-                    if node.size() == 0 {
+                    // otherwise if we removed the last link, then we need to
+                    //  return the default cid
+                    else if node.size() == 0 {
                         return Ok(Some(Cid::default()));
                     }
-                } else {
-                    node.update_link(&next, maybe_link, maybe_metadata, maybe_backdate);
+                }
+                // NOTE: this being true means that schemas don't get persisted
+                //  even if configured to do so
+                else if let Some(link) = maybe_link {
+                    // otherwise, upser the link
+                    node.put_link(&next_link, link)?;
+                }
+                // otherwise, we need to handle edge cases where:
+                // -- either we're upserting a schema into a child node
+                // -- we potentially might be upserting metadata on a data link that
+                //    doesn't exist
+                else {
+                    // so check if the link exists 
+                    match node.get_link(&next_link) {
+                        // if we have a node
+                        Some(NodeLink::Node(cid)) => {
+                            // and our schema is set to persist
+                            if let Some((schema, true)) = schema.as_ref() {
+                                // upsert the schema
+                                let schema = schema.clone();
+                                let mut next_node =
+                                    Self::get_cache::<Node>(cid, block_cache).await?;
+                                next_node.set_schema(schema);
+                                // and put the node back in the cache
+                                let next_node_cid =
+                                    Self::put_cache::<Node>(&next_node, block_cache).await?;
+                                // and update the link in the parent node
+                                node.put_link(&next_link, next_node_cid)?;
+                            }
+                        }
+                        // we have either noth
+                        Some(NodeLink::Data(_, _)) => {
+                            // if we're not setting an object, we need to error out
+                            if maybe_object.is_none() {
+                                return Err(MountError::Default(anyhow::anyhow!(
+                                    "cannot set a schema on a data node: {}/{}",
+                                    consumed_path.display(),
+                                    next_link
+                                )));
+                            }
+                        }
+                        None => return Ok(None),
+                    }
                 }
 
-                let cid = Self::put_cache::<Node>(&node, block_cache).await?;
+                // if we have an object
+                // upsert the object -- we should know that it always exists at this point
+                if let Some(object) = maybe_object {
+                    let _schema = schema.map(|(s, _)| s);
+                    node.put_object(&next_link, object, _schema)?;
+                }
+
+                // and if we made it here, we need to put the node in the cache
+                //  and bubble up the new cid
+                let cid = Self::put_cache::<Node>(node, block_cache).await?;
                 Ok(Some(cid))
             }
+            // if this is not the last part of the path, we need to recurse
+            //  by splitting off the path and recursing on the next node
             _ => {
-                let remaining = path.iter().skip(1).collect::<PathBuf>();
-                let next_cid = if let Some(next_cid) = node.get_link(&next) {
-                    next_cid
-                } else if !is_rm {
-                    let new_node = Node::default();
-                    Self::put_cache::<Node>(&new_node, block_cache).await?
-                } else {
-                    return Ok(None);
+                // update the paths
+                let consumed_path = consumed_path.join(&next_link);
+                let remaining_path = remaining_path.iter().skip(1).collect::<PathBuf>();
+                
+                // get the next link
+                let mut next_node = match node.get_link(&next_link) {
+                    // if we've run into a data node, we need to error out -- there's no where else to traverse
+                    Some(NodeLink::Data(_, _)) => {
+                        // this should never happen
+                        return Err(MountError::Default(anyhow::anyhow!(
+                            "data node encountered at path: {}/{}",
+                            consumed_path.display(),
+                            next_link
+                        )));
+                    }
+                    // if we've run into a node, we need to recurse on it
+                    Some(NodeLink::Node(cid)) => {
+                        // get the next cid by looking up the link
+                        let next_node_cid = *cid;
+                        // and get the node from the cache
+                        Self::get_cache::<Node>(&next_node_cid, block_cache).await?
+                    }
+                    // otherwise
+                    None => {
+                        // if this is creating a new link, we need to create a new node
+                        if maybe_link.is_some() {
+                            let new_node = Node::default();
+                            Self::put_cache::<Node>(&new_node, block_cache).await?;
+                            new_node
+                        }
+                        // otherwise, this means we're trying to update an object at a link
+                        //  that doesn't exist
+                        //  -- this should never happen in the client
+                        else {
+                            return Ok(None);
+                        }
+                    }
                 };
 
-                let maybe_cid = Self::upsert_link_and_object(
-                    &next_cid,
-                    &remaining,
+                // recurse on the next node
+                let maybe_cid = Self::upsert_node(
+                    &mut next_node,
+                    &consumed_path,
+                    &remaining_path,
                     maybe_link,
-                    maybe_metadata,
-                    maybe_backdate,
-                    _ipfs_rpc,
+                    maybe_object,
+                    maybe_schema,
                     block_cache,
                 )
                 .await?;
 
                 match maybe_cid {
+                    // if the next node was removed, we need to remove the link
                     Some(cid) if cid == Cid::default() => {
-                        node.del(&next);
+                        node.del(&next_link);
                         if node.size() == 0 {
+                            // if this was the last link, then prune the node
+                            //  by returning the default cid
                             return Ok(Some(Cid::default()));
                         }
                     }
+                    // otherwise, upsert the link
                     Some(cid) => {
-                        node.put_link(&next, &cid);
+                        node.put_link(&next_link, cid)?;
                     }
+                    // otherwise signal no changes were made
                     None => return Ok(None),
                 }
 
-                let cid = Self::put_cache::<Node>(&node, block_cache).await?;
+                // and if we made it here, we need to put the node in the cache
+                //  and bubble up the new cid
+                let cid = Self::put_cache::<Node>(node, block_cache).await?;
                 Ok(Some(cid))
             }
         }
@@ -430,7 +559,7 @@ impl Mount {
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
-        let cid = ipfs_rpc.hash_data(MhCode::Blake3_256, data).await?;
+        let cid = ipfs_rpc.hash_data(data).await?;
         Ok(cid)
     }
 
@@ -438,7 +567,7 @@ impl Mount {
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
-        let cid = ipfs_rpc.add_data(MhCode::Blake3_256, data).await?;
+        let cid = ipfs_rpc.add_data(data).await?;
         Ok(cid)
     }
 
@@ -451,27 +580,16 @@ impl Mount {
     where
         B: TryFrom<Ipld>,
     {
-        let data = ipfs_rpc.get_block_send_safe(cid).await?;
-        let block =
-            Block::<DefaultParams>::new(*cid, data).map_err(|_| MountError::BlockCreation)?;
-        let ipld = block
-            .decode::<DagCborCodec, Ipld>()
-            .map_err(|_| MountError::BlockDecode)?;
+        let ipld = ipfs_rpc.get_ipld(cid).await?;
         let object = B::try_from(ipld).map_err(|_| MountError::Ipld)?;
         Ok(object)
     }
 
-    async fn put<B>(object: &B, ipfs_rpc: &IpfsRpc) -> Result<Cid, MountError>
+    async fn put<B>(ipld: &B, ipfs_rpc: &IpfsRpc) -> Result<Cid, MountError>
     where
         B: Into<Ipld> + Clone,
     {
-        let ipld: Ipld = object.clone().into();
-        let block = Block::<DefaultParams>::encode(DagCborCodec, MhCode::Blake3_256, &ipld)
-            .map_err(|_| MountError::BlockEncoding)?;
-        let cursor = std::io::Cursor::new(block.data().to_vec());
-        let cid = ipfs_rpc
-            .put_block(IpldCodec::DagCbor, MhCode::Blake3_256, cursor)
-            .await?;
+        let cid = ipfs_rpc.put_ipld(ipld.clone()).await?;
         Ok(cid)
     }
 
@@ -489,32 +607,28 @@ impl Mount {
         Ok(object)
     }
 
-    async fn put_cache<B>(
-        object: &B,
-        block_cache: &Arc<Mutex<BlockCache>>,
-    ) -> Result<Cid, MountError>
+    async fn put_cache<B>(ipld: &B, block_cache: &Arc<Mutex<BlockCache>>) -> Result<Cid, MountError>
     where
         B: Into<Ipld> + Clone,
     {
-        let block = Block::<DefaultParams>::encode(
-            DagCborCodec,
-            MhCode::Blake3_256,
-            &object.clone().into(),
-        )
-        .map_err(|_| MountError::BlockEncoding)?;
-        let cid = *block.cid();
+        // convert our ipld able thing to a block
+        //  in order to determine the cid
+        let ipld: Ipld = ipld.clone().into();
+        let cid = ipld_to_cid(ipld.clone());
 
-        block_cache
-            .lock()
-            .insert(cid.to_string(), object.clone().into());
+        block_cache.lock().insert(cid.to_string(), ipld);
         Ok(cid)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum MountError {
+    #[error("default error: {0}")]
+    Default(#[from] anyhow::Error),
     #[error("block cache miss: {0}")]
     BlockCacheMiss(Cid),
+    #[error("node error: {0}")]
+    Node(#[from] NodeError),
     #[error("ipfs rpc error: {0}")]
     IpfsRpc(#[from] IpfsRpcError),
     #[error("could not convert Ipld to type")]
@@ -547,7 +661,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo"), data, None, true)
+            .add(&PathBuf::from("/foo"), Some((data, true)), None, None)
             .await
             .unwrap();
     }
@@ -556,10 +670,10 @@ mod test {
     async fn add_with_metadata() {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
-        let mut metadata = BTreeMap::new();
-        metadata.insert("foo".to_string(), Ipld::String("bar".to_string()));
+        let mut object = Object::default();
+        object.insert("foo".to_string(), Ipld::String("bar".to_string()));
         mount
-            .add(&PathBuf::from("/foo"), data, Some(&metadata), true)
+            .add(&PathBuf::from("/foo"), Some((data, true)), Some(&object), None)
             .await
             .unwrap();
     }
@@ -569,7 +683,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/bar"), data, None, false)
+            .add(&PathBuf::from("/bar"), Some((data, false)), None, None)
             .await
             .unwrap();
         let get_data = mount.cat(&PathBuf::from("/bar")).await.unwrap();
@@ -581,7 +695,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/bar"), data, None, true)
+            .add(&PathBuf::from("/bar"), Some((data, true)), None, None)
             .await
             .unwrap();
         let links = mount.ls(&PathBuf::from("/")).await.unwrap();
@@ -593,7 +707,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bar/buzz"), data, None, true)
+            .add(&PathBuf::from("/foo/bar/buzz"), Some((data, true)), None, None)
             .await
             .unwrap();
     }
@@ -603,7 +717,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bar"), data, None, true)
+            .add(&PathBuf::from("/foo/bar"), Some((data, true)), None, None)
             .await
             .unwrap();
         mount.rm(&PathBuf::from("/foo/bar")).await.unwrap();
@@ -614,7 +728,7 @@ mod test {
         let mut mount = empty_mount().await;
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/bar"), data, None, true)
+            .add(&PathBuf::from("/bar"), Some((data, true)), None, None)
             .await
             .unwrap();
         let cid = *mount.cid();
@@ -630,13 +744,13 @@ mod test {
 
         let data = "foo".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bar"), data, None, true)
+            .add(&PathBuf::from("/foo/bar"), Some((data, true)), None, None)
             .await
             .unwrap();
 
         let data = "bang".as_bytes();
         mount
-            .add(&PathBuf::from("/foo/bug"), data, None, true)
+            .add(&PathBuf::from("/foo/bug"), Some((data, true)), None, None)
             .await
             .unwrap();
     }
