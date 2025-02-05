@@ -36,23 +36,15 @@ pub async fn handler(
 ) -> Result<impl IntoResponse, PushRootError> {
     let cid = Cid::from_str(&push_root.cid)?;
     let previous_cid = Cid::from_str(&push_root.previous_cid)?;
-    let mut mount = state.mount();
-
+    
     let db = state.sqlite_database();
     let mut conn = db.begin().await?;
 
     let root_cid = RootCid::push(&cid, &previous_cid, &mut conn).await?;
-
     conn.commit().await?;
 
-    // TODO: if this fails this could never retry properly and mess up versioning
-    //  This shoudl really be backgrounded in order to be considered correct
-    // TODO: i am not sure if old blocks get pruged from the metadata on pull ...
-    //  this not being the case has the potential to cause bloat
-    mount.update(root_cid.cid()).await?;
-    tracing::info!("mounted new root CID: {}", root_cid.cid());
-    tracing::info!("previous root CID: {}", root_cid.previous_cid());
-    tracing::info!("updated manifest: {:?}", mount.manifest());
+    let mut mount_guard = state.mount_guard();
+    mount_guard.update(root_cid.cid().clone()).await?;
 
     Ok((http::StatusCode::OK, Json(PushRootResponse::from(root_cid))).into_response())
 }

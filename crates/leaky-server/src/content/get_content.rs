@@ -21,6 +21,7 @@ pub struct GetContentQuery {
     pub html: Option<bool>,
     pub thumbnail: Option<bool>,
 }
+
 pub async fn handler(
     State(state): State<AppState>,
     AxumPath(path): AxumPath<PathBuf>,
@@ -30,33 +31,21 @@ pub async fn handler(
     let mut conn = db.acquire().await?;
     let maybe_root_cid = RootCid::pull(&mut conn).await?;
 
-    // TODO: there's probably a better way to do this -- mounts always at least populated
-    //  so maybe its fine to just serve whatever is there
     match maybe_root_cid {
         Some(_rc) => {}
         None => return Err(GetContentError::RootNotFound),
     };
-    let mount = state.mount();
-
+    
+    let mount_guard = state.mount_guard();
+    
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
+    
+    let ls_result = mount_guard.ls(&path, false).await;
 
-    let ls_result = mount.ls(&path, false).await;
-    tracing::info!(
-        "GET {} | {:?} | ls_result: {:?}",
-        path.display(),
-        query,
-        ls_result
-    );
     match ls_result {
         Ok((ls, _)) => {
             if !ls.is_empty() {
-                tracing::info!(
-                    "GET {} | {:?} | returning ls: {:?}",
-                    path.display(),
-                    query,
-                    ls
-                );
                 return Ok((
                     http::StatusCode::OK,
                     [(CONTENT_TYPE, "application/json")],
@@ -79,40 +68,24 @@ pub async fn handler(
         // Markdown
         "md" => {
             if query.html.unwrap_or(false) {
-                tracing::info!(
-                    "GET {} | {:?} | rendering markdown as html",
-                    path.display(),
-                    query
-                );
-                let base_path = path.parent();
-                let empty_path = PathBuf::new();
-                let base_path = base_path.unwrap_or(&empty_path);
+                let base_path = path.parent().unwrap_or_else(|| Path::new(""));
                 let get_content_url = state.get_content_forwarding_url().join("content").unwrap();
-                let data = mount
-                    .cat(&path)
-                    .await
+                
+                let data = mount_guard.cat(&path).await
                     .map_err(|_| GetContentError::NotFound)?;
+                
                 let html = markdown_to_html(data, base_path, &get_content_url);
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
             } else {
-                tracing::info!(
-                    "GET {} | {:?} | returning markdown as text",
-                    path.display(),
-                    query
-                );
-                let data = mount
-                    .cat(&path)
-                    .await
+                let data = mount_guard.cat(&path).await
                     .map_err(|_| GetContentError::NotFound)?;
+                    
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data).into_response())
             }
         }
         // Images
         "png" | "jpg" | "jpeg" | "gif" => {
-            tracing::info!("GET {} | {:?} | returning image", path.display(), query);
-            let data = mount
-                .cat(&path)
-                .await
+            let data = mount_guard.cat(&path).await
                 .map_err(|_| GetContentError::NotFound)?;
             if query.thumbnail.unwrap_or(false) && ext != "gif" {
                 let resized_image = resize_image(&data, ext)?;
@@ -133,10 +106,7 @@ pub async fn handler(
         }
         // All other files
         _ => {
-            tracing::info!("GET {} | {:?} | returning misc file", path.display(), query);
-            let data = mount
-                .cat(&path)
-                .await
+            let data = mount_guard.cat(&path).await
                 .map_err(|_| GetContentError::NotFound)?;
             Ok((
                 http::StatusCode::OK,
@@ -205,7 +175,6 @@ pub fn markdown_to_html(data: Vec<u8>, base_path: &Path, get_content_url: &Url) 
             let path = PathBuf::from(cap.as_str());
             let path = normalize_path(base_path.join(path));
             let url = get_content_url.join(path.to_str().unwrap()).unwrap();
-            tracing::info!("replacing {} with {}", cap.as_str(), url);
             let old = format!(r#"src="./{}""#, cap.as_str());
             let new = format!(r#"src="{}""#, url);
             result = result.replace(&old, &new);

@@ -2112,6 +2112,7 @@ dependencies = [
  "image",
  "leaky-common",
  "multibase",
+ "parking_lot",
  "pico-args",
  "pulldown-cmark",
  "regex",
