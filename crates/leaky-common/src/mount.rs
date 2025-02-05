@@ -118,6 +118,7 @@ impl Mount {
     /// update an existing mount against an updated ipfs rpc
     pub async fn update(&mut self, cid: Cid) -> Result<(), MountError> {
         let manifest = Self::get::<Manifest>(&cid, &self.ipfs_rpc).await?;
+        println!("UPDATE MANIFEST: {:?}", manifest);
         // make sure the mount points back to our current cid
         let previous_cid = manifest.previous();
         if *previous_cid != self.cid {
@@ -130,6 +131,7 @@ impl Mount {
         // update the manifest and block cache
         self.manifest = Arc::new(Mutex::new(manifest));
         self.block_cache = block_cache;
+        self.cid = cid;
         Ok(())
     }
 
@@ -449,16 +451,22 @@ impl Mount {
     async fn get_node_link_at_path(&self, path: &Path) -> Result<NodeLink, MountError> {
         let block_cache = &self.block_cache;
         // path should be cleaned already
+        println!("GET_NODE_LINK_AT_PATH {:?}", path);
+
+        println!("MANIFEST: {:?}", self.manifest.lock());
 
         // get our entry into the mount
         let data_node_cid = *self.manifest.lock().data();
+
+        println!("DATA_NODE_CID: {:?}", data_node_cid);
         // if this is just / then we're done
         if path.iter().count() == 0 {
+            println!("RETURNING DATA NODE CID");
             return Ok(NodeLink::Node(data_node_cid));
         }
 
         let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
-
+        println!("NODE: {:?}", node);
         // keep track of our consumed path and remaining path
         let mut consumed_path = PathBuf::from("/");
         let link_name = path
@@ -986,15 +994,11 @@ mod test {
     async fn set_schema_ls_nonexistant_path() {
         let mut mount = empty_mount().await;
         let schema = Schema::default();
-        println!("{:?}", schema);
         mount
             .set_schema(&PathBuf::from("/bar"), schema)
             .await
             .unwrap();
-        println!("about to ls");
-        let (ls, schema) = mount.ls(&PathBuf::from("/bar"), false).await.unwrap();
-        println!("{:?}", schema);
-        println!("{:?}", ls);
+        let (_ls, schema) = mount.ls(&PathBuf::from("/bar"), false).await.unwrap();
         assert!(schema.is_some());
     }
 
