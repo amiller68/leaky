@@ -37,7 +37,14 @@ impl AppState {
         let mount = match maybe_root_cid {
             Some(rc) => Mount::pull(rc.cid(), &ipfs_rpc).await?,
 
-            None => Mount::init(&ipfs_rpc).await?,
+            None => {
+                let mount = Mount::init(&ipfs_rpc).await?;
+                let previous_cid = mount.previous_cid();
+                let cid = mount.cid();
+                // set the root cid
+                RootCid::push(&cid, &previous_cid, &mut conn).await?;
+                mount
+            }
         };
 
         Ok(Self {

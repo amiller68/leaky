@@ -8,6 +8,9 @@ use super::object::{Object, ObjectError};
 use super::schema::{Schema, SchemaError};
 use super::{DEFAULT_HASH_CODE, DEFAULT_IPLD_CODEC};
 
+// TODO: not allowing node links to exist as nodes is a bit of a hack
+//  and creates issues down the line writing logic around nodes vs node links
+
 // Reserved object key for detailing what links
 //  within have visible metatdata attached to them
 // NOTE: i'd like to name this to .object, but this makes us compatible with
@@ -178,7 +181,7 @@ impl Node {
         if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
             return Err(NodeError::ReservedName(name.to_string()));
         }
-        println!("putting new link: {} @ {}", name, cid.to_string());
+        println!("putting new link: {} @ {}", name, cid);
         match IpldCodec::try_from(cid.codec()).unwrap() {
             IpldCodec::DagCbor => {
                 println!("dag cbor");

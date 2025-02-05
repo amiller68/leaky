@@ -41,7 +41,7 @@ pub async fn handler(
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
 
-    let ls_result = mount.ls(&path).await;
+    let ls_result = mount.ls(&path, false).await;
     tracing::info!(
         "GET {} | {:?} | ls_result: {:?}",
         path.display(),
@@ -49,7 +49,7 @@ pub async fn handler(
         ls_result
     );
     match ls_result {
-        Ok(ls) => {
+        Ok((ls, _)) => {
             if !ls.is_empty() {
                 tracing::info!(
                     "GET {} | {:?} | returning ls: {:?}",

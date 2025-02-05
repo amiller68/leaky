@@ -45,11 +45,13 @@ pub async fn handler(
 
     conn.commit().await?;
 
+    tracing::info!("pushed root cid: {:?}", root_cid);
     // TODO: if this fails this could never retry properly and mess up versioning
     //  This shoudl really be backgrounded in order to be considered correct
     // TODO: i am not sure if old blocks get pruged from the metadata on pull ...
     //  this not being the case has the potential to cause bloat
-    mount.refresh(root_cid.cid()).await?;
+    mount.update(root_cid.cid()).await?;
+    tracing::info!("updated mount");
 
     Ok((http::StatusCode::OK, Json(PushRootResponse::from(root_cid))).into_response())
 }

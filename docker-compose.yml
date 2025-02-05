@@ -33,4 +33,3 @@ networks:
 
 volumes:
   ipfs_data:
-

@@ -104,7 +104,7 @@ async fn handle_object_file(
     };
 
     // Add object to the target file
-    mount.tag_object(&target_path, object).await?;
+    mount.tag(&target_path, object).await?;
 
     Ok(())
 }
@@ -163,11 +163,11 @@ impl Op for Add {
             match diff_type {
                 ChangeType::Added { .. } => {
                     let file = File::open(&path)?;
-                    mount.add(&abs_path, (file, true)).await?;
+                    mount.add(&abs_path, (file, false)).await?;
                 }
                 ChangeType::Modified => {
                     let file = File::open(&path)?;
-                    mount.add(&abs_path, (file, true)).await?;
+                    mount.add(&abs_path, (file, false)).await?;
                 }
                 ChangeType::Removed => {
                     mount.rm(&abs_path).await?;

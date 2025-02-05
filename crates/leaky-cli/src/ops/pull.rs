@@ -54,8 +54,9 @@ impl Op for Pull {
         let mount = Mount::pull(cid, &ipfs_rpc).await?;
 
         let pulled_items = mount
-            .objects()
+            .ls(&PathBuf::from("/"), true)
             .await?
+            .0
             .iter()
             .map(|(path, cid)| (path.strip_prefix("/").unwrap().to_path_buf(), cid.clone()))
             .collect::<Vec<_>>();
