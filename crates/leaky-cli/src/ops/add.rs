@@ -50,8 +50,6 @@ async fn handle_schema_file(
     path: &PathBuf,
     abs_path: &Path,
 ) -> Result<(), AddError> {
-    println!("Handling schema file: {:?}", path);
-
     // Read and parse schema file
     let schema_str = std::fs::read_to_string(path)?;
     let schema: Schema =
@@ -74,7 +72,6 @@ async fn handle_object_file(
     abs_path: &Path,
 ) -> Result<(), AddError> {
     // Read and parse object file
-    println!("Handling object file: {:?}", path);
     let obj_str = std::fs::read_to_string(path)?;
     let object: Object =
         serde_json::from_str(&obj_str).map_err(|e| AddError::InvalidSchema(e.to_string()))?;
@@ -151,7 +148,6 @@ impl Op for Add {
             let maybe_parent = path.parent();
             if file_name.as_deref() == Some(".schema")
                 || if let Some(parent) = maybe_parent {
-                    println!("parent: {:?}", parent);
                     parent.file_name().map_or(false, |f| f == ".obj")
                 } else {
                     false

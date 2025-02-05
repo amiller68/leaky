@@ -118,7 +118,6 @@ impl Mount {
     /// update an existing mount against an updated ipfs rpc
     pub async fn update(&mut self, cid: Cid) -> Result<(), MountError> {
         let manifest = Self::get::<Manifest>(&cid, &self.ipfs_rpc).await?;
-        println!("UPDATE MANIFEST: {:?}", manifest);
         // make sure the mount points back to our current cid
         let previous_cid = manifest.previous();
         if *previous_cid != self.cid {
@@ -285,33 +284,9 @@ impl Mount {
         path: &Path,
         deep: bool,
     ) -> Result<(BTreeMap<PathBuf, NodeLink>, Option<Schema>), MountError> {
-        // always clean the path
-        let path = clean_path(path);
-
-        // get the node at the path
-        let node_link = self.get_node_link_at_path(&path).await?;
-        match node_link {
-            NodeLink::Data(_, _) => Err(MountError::PathNotDir(path.to_path_buf())),
-            NodeLink::Node(cid) => {
-                if deep {
-                    let node = Self::get_cache::<Node>(&cid, &self.block_cache).await?;
-                    let items = self.ls_deep(&path, &node).await?;
-                    Ok((items.into_iter().collect(), None))
-                } else {
-                    let node = Self::get_cache::<Node>(&cid, &self.block_cache).await?;
-
-                    let schema = node.schema().cloned();
-                    let links = node.get_links();
-                    Ok((
-                        links
-                            .iter()
-                            .map(|(k, v)| (PathBuf::from(k), v.clone()))
-                            .collect(),
-                        schema,
-                    ))
-                }
-            }
-        }
+        let (links, schemas) = self.ls_with_schemas(path, deep).await?;
+        let schema = schemas.get(path).cloned();
+        Ok((links, schema))
     }
 
     /// cat data at a given path within the mount
@@ -327,7 +302,6 @@ impl Mount {
     /// * `Ok(Vec<u8>)` - if the data was retrieved successfully
     /// * `Err(MountError)` - if the data could not be retrieved
     pub async fn cat(&self, path: &Path) -> Result<Vec<u8>, MountError> {
-        println!("CAT {:?}", path);
         let ipfs_rpc = &self.ipfs_rpc;
         // always clean the path
         let path = clean_path(path);
@@ -448,25 +422,19 @@ impl Mount {
     ///
     /// * `Ok((node, node_link))` - if the node or node link was found
     /// * `Err(MountError)` - if the node or node link could not be found
-    async fn get_node_link_at_path(&self, path: &Path) -> Result<NodeLink, MountError> {
+    pub async fn get_node_link_at_path(&self, path: &Path) -> Result<NodeLink, MountError> {
         let block_cache = &self.block_cache;
         // path should be cleaned already
-        println!("GET_NODE_LINK_AT_PATH {:?}", path);
-
-        println!("MANIFEST: {:?}", self.manifest.lock());
 
         // get our entry into the mount
         let data_node_cid = *self.manifest.lock().data();
 
-        println!("DATA_NODE_CID: {:?}", data_node_cid);
         // if this is just / then we're done
         if path.iter().count() == 0 {
-            println!("RETURNING DATA NODE CID");
             return Ok(NodeLink::Node(data_node_cid));
         }
 
         let mut node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
-        println!("NODE: {:?}", node);
         // keep track of our consumed path and remaining path
         let mut consumed_path = PathBuf::from("/");
         let link_name = path
@@ -534,9 +502,15 @@ impl Mount {
         &self,
         path: &Path,
         node: &Node,
-    ) -> Result<BTreeMap<PathBuf, NodeLink>, MountError> {
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         let mut items = BTreeMap::new();
+        let mut schemas = BTreeMap::new();
         let links = node.get_links();
+
+        // Add schema for current path if it exists
+        if let Some(schema) = node.schema() {
+            schemas.insert(path.to_path_buf(), schema.clone());
+        }
 
         for (name, link) in links {
             let mut current_path = path.to_path_buf();
@@ -549,14 +523,15 @@ impl Mount {
 
                 NodeLink::Node(cid) => {
                     let node = Self::get_cache::<Node>(cid, &self.block_cache).await?;
-
-                    let mut _items = self.ls_deep(&current_path, &node).await?;
-                    items.append(&mut _items);
+                    let (mut sub_items, mut sub_schemas) = self.ls_deep(&current_path, &node).await?;
+                    
+                    items.append(&mut sub_items);
+                    schemas.append(&mut sub_schemas);
                 }
             };
         }
 
-        Ok(items)
+        Ok((items, schemas))
     }
 
     #[async_recursion::async_recursion]
@@ -879,6 +854,38 @@ impl Mount {
 
         block_cache.lock().insert(cid.to_string(), ipld);
         Ok(cid)
+    }
+
+    pub async fn ls_with_schemas(
+        &self,
+        path: &Path,
+        deep: bool,
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
+        let path = clean_path(path);
+        let node_link = self.get_node_link_at_path(&path).await?;
+
+        match node_link {
+            NodeLink::Data(_, _) => Err(MountError::PathNotDir(path.to_path_buf())),
+            NodeLink::Node(cid) => {
+                if deep {
+                    let node = Self::get_cache::<Node>(&cid, &self.block_cache).await?;
+                    self.ls_deep(&path, &node).await
+                } else {
+                    let node = Self::get_cache::<Node>(&cid, &self.block_cache).await?;
+                    let mut schemas = BTreeMap::new();
+                    if let Some(schema) = node.schema() {
+                        schemas.insert(path.to_path_buf(), schema.clone());
+                    }
+                    Ok((
+                        node.get_links()
+                            .iter()
+                            .map(|(k, v)| (PathBuf::from(k), v.clone()))
+                            .collect(),
+                        schemas,
+                    ))
+                }
+            }
+        }
     }
 }
 

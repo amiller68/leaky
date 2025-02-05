@@ -181,14 +181,11 @@ impl Node {
         if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
             return Err(NodeError::ReservedName(name.to_string()));
         }
-        println!("putting new link: {} @ {}", name, cid);
         match IpldCodec::try_from(cid.codec()).unwrap() {
             IpldCodec::DagCbor => {
-                println!("dag cbor");
                 self.links.insert(name.to_string(), NodeLink::Node(cid));
             }
             _ => {
-                println!("raw or other");
                 self.links
                     .insert(name.to_string(), NodeLink::Data(cid, None));
             }

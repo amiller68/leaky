@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use super::ops::Add as AddOp;
 use super::ops::Init as InitOp;
 use super::ops::Push as PushOp;
-// use super::ops::Pull as PullOp;
-// use super::ops::Tag as TagOp;
+use super::ops::Pull as PullOp;
 use super::AppState;
 
 pub use clap::Parser;
@@ -78,11 +77,10 @@ use crate::command_enum;
 command_enum! {
     (Init, InitOp),
     (Add, AddOp),
-    // (Pull, PullOp),
+    (Pull, PullOp),
     (Push, PushOp),
     // (Stat, StatOp),
     // (Key, KeyOp),
-    // (Tag, TagOp),
     // Define more commands here
 }
 
@@ -99,7 +97,7 @@ impl fmt::Display for OpOutput {
                 path.display()
             ),
             OpOutput::Add(cid) => write!(f, "{}", cid),
-            // OpOutput::Pull(cid) => write!(f, "{}", cid),
+            OpOutput::Pull(cid) => write!(f, "{}", cid),
             OpOutput::Push(cid) => write!(f, "{}", cid),
             // OpOutput::Stat(cid) => write!(f, "{}", cid), // Define more outputs here
             // OpOutput::Key(string) => write!(f, "{}", string),
