@@ -98,12 +98,14 @@ impl IpfsRpc {
         };
 
         let client = self.client.clone();
+
         let response = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current()
                 .block_on(async move { client.add_with_options(data, options).await })
         })
         .await
         .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
+
         let cid = Cid::from_str(&response.hash)?;
 
         Ok(cid)

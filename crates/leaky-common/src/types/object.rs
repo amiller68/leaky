@@ -8,7 +8,10 @@ use super::Ipld;
 
 pub const OBJECT_CREATED_AT_KEY: &str = "created_at";
 pub const OBJECT_UPDATED_AT_KEY: &str = "updated_at";
-pub const LEGACY_METADATA_KEY: &str = "metadata";
+// NOTE: we keep things nested under metadata to keep
+//  things backwards compatible -- otherwise we end up changing
+//  the cid when we serialize back to ipld
+pub const LEGACY_PROPERTIES_KEY: &str = "metadata";
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Object {
@@ -82,7 +85,7 @@ impl Object {
 // IPLD serialization implementations remain unchanged
 impl From<Object> for Ipld {
     fn from(object: Object) -> Self {
-        let mut map = object.properties;
+        let mut map = BTreeMap::new();
 
         map.insert(
             OBJECT_CREATED_AT_KEY.to_string(),
@@ -92,6 +95,8 @@ impl From<Object> for Ipld {
             OBJECT_UPDATED_AT_KEY.to_string(),
             Ipld::Integer(object.updated_at.unix_timestamp_nanos()),
         );
+
+        map.insert(LEGACY_PROPERTIES_KEY.to_string(), Ipld::Map(object.properties));
 
         Ipld::Map(map)
     }
@@ -116,10 +121,10 @@ impl TryFrom<Ipld> for Object {
             _ => return Err(ObjectError::MissingField(OBJECT_UPDATED_AT_KEY.to_string())),
         };
 
-        // if the metadata key is present, then we're dealing wth a legacy object
-        //  otherwise we pack the rest of the map into properties
-        let mut properties = map;
-        if let Some(Ipld::Map(metadata)) = properties.remove(LEGACY_METADATA_KEY) {
+        // properties is just everything under the legacy properties key, or 
+        //  a new map of properties
+        let mut properties = BTreeMap::new();
+        if let Some(Ipld::Map(metadata)) = map.remove(LEGACY_PROPERTIES_KEY) {
             properties = metadata;
         }
 

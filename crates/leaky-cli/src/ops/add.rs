@@ -13,7 +13,10 @@ use crate::{AppState, Op};
 use super::diff::{diff, DiffError};
 
 #[derive(Debug, clap::Args, Clone)]
-pub struct Add;
+pub struct Add {
+    #[clap(short, long)]
+    pub verbose: bool,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AddError {
@@ -67,6 +70,7 @@ async fn handle_schema_file(
     Ok(())
 }
 
+// TODO: handle deleting object metadata
 async fn handle_object_file(
     mount: &mut Mount,
     path: &PathBuf,
@@ -134,9 +138,9 @@ impl Op for Add {
         let mut change_log = state.change_log().clone();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
         let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
-
         let updates = diff(&mut change_log).await?;
-        let change_log_iter = updates.iter().map(|(path, (hash, change))| {
+        let updates_clone = updates.clone();
+        let change_log_iter = updates_clone.iter().map(|(path, (hash, change))| {
             let abs_path = abs_path(path).unwrap();
             (path.clone(), abs_path, (hash, change))
         });
@@ -144,8 +148,9 @@ impl Op for Add {
         // First pass - handle schemas
         for (path, abs_path, (_hash, diff_type)) in change_log_iter.clone() {
             if path.file_name().map_or(false, |f| f == ".schema") {
+                println!("HANDLING SCHEMA at {:?}", path);
                 match diff_type {
-                    ChangeType::Added { .. } | ChangeType::Modified => {
+                    ChangeType::Added { .. } | ChangeType::Modified { .. }=> {
                         handle_schema_file(&mut mount, &path, &abs_path).await?;
                     }
                     ChangeType::Removed => {
@@ -157,7 +162,7 @@ impl Op for Add {
         }
 
         // Second pass - handle regular files
-        for (path, abs_path, (_hash, diff_type)) in change_log_iter.clone() {
+        for (path, abs_path, (hash, diff_type)) in change_log_iter.clone() {
             let file_name = path.file_name().map(|f| f.to_string_lossy().to_string());
 
             // Skip schema and object files -- files named .schema and files who's parent is .obj
@@ -174,13 +179,20 @@ impl Op for Add {
             }
 
             match diff_type {
-                ChangeType::Added { .. } => {
+                ChangeType::Added { modified: true } => {
                     let file = File::open(&path)?;
+                    if self.verbose {
+                        println!(" -> adding file {:?}", abs_path);
+                    }
                     mount.add(&abs_path, (file, false)).await?;
                 }
-                ChangeType::Modified => {
+                ChangeType::Modified { processed: false } => {
                     let file = File::open(&path)?;
+                    if self.verbose {
+                        println!(" -> updating file {:?}", abs_path);
+                    }
                     mount.add(&abs_path, (file, false)).await?;
+                    updates.insert(path, (*hash, ChangeType::Modified { processed: true }));
                 }
                 ChangeType::Removed => {
                     mount.rm(&abs_path).await?;
@@ -195,17 +207,25 @@ impl Op for Add {
             if let Some(parent) = path.parent() {
                 if parent.file_name().map_or(false, |f| f == ".obj") {
                     match diff_type {
-                        ChangeType::Added { .. } | ChangeType::Modified => {
+                        ChangeType::Added { .. } | ChangeType::Modified { .. } => {
                             handle_object_file(&mut mount, &path, &abs_path).await?;
                         }
+                        // TODO: handle deleting object metadata
                         _ => continue,
                     }
                 }
             }
         }
 
+        // TODO: we really shouldn't need to push here
+        //  I think the reason we are is so that we can persist
+        //  the changes to the mount soooomewhere
+        //  Ideally we should be able to write the current state of the mount
+        //  locally and only push when we want to
         mount.push().await?;
         let new_cid = *mount.cid();
+        
+        state.save(&mount, Some(&updates), None)?;
 
         if new_cid == cid {
             return Ok(AddOutput {
@@ -214,7 +234,6 @@ impl Op for Add {
             });
         }
 
-        state.save(&mount, Some(&updates), None)?;
 
         Ok(AddOutput {
             previous_cid: cid,

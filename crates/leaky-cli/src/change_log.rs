@@ -25,7 +25,7 @@ pub enum ChangeType {
     Added { modified: bool },
     // Covers files that have been modified since the last call to `push`
     //  that still exist, but have been modified
-    Modified,
+    Modified { processed: bool },
     // Covers files that have been removed since the last call to `push`
     Removed,
 }
@@ -35,7 +35,7 @@ impl std::fmt::Display for ChangeType {
         let s = match self {
             Self::Base => "\x1b[0;32mBase\x1b[0m",
             Self::Added { .. } => "\x1b[0;32mAdded\x1b[0m",
-            Self::Modified => "\x1b[0;33mModified\x1b[0m",
+            Self::Modified { .. } => "\x1b[0;33mModified\x1b[0m",
             Self::Removed => "\x1b[0;31mRemoved\x1b[0m",
         };
         write!(f, "{}", s)

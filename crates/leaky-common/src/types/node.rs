@@ -242,6 +242,16 @@ impl Node {
         Ok(())
     }
 
+    pub fn rm_object(&mut self, name: &str) -> Result<(), NodeError> {
+        let link = self.get_link(name);
+        if let Some(NodeLink::Data(cid, _)) = link {
+            self.links.insert(name.to_string(), NodeLink::Data(*cid, None));
+            Ok(())
+        } else {
+            Err(NodeError::LinkNotFound(name.to_string()))
+        }
+    }
+
     pub fn del(&mut self, name: &str) -> Option<NodeLink> {
         // check if the link is an object
         self.links.remove(name)

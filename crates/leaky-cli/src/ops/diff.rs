@@ -54,7 +54,7 @@ pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
                         let hash = utils::hash_file(&next_path, &ipfs).await?;
                         update.insert(
                             next_path.clone(),
-                            (hash, ChangeType::Added { modified: false }),
+                            (hash, ChangeType::Added { modified: true }),
                         );
                     }
                     next_next = next_iter.next();
@@ -82,7 +82,7 @@ pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
                                 _ => {
                                     update.insert(
                                         base_path.clone(),
-                                        (next_hash, ChangeType::Modified),
+                                        (next_hash, ChangeType::Modified { processed: true }),
                                     );
                                 }
                             }

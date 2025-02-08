@@ -178,7 +178,6 @@ impl Mount {
             (d, true) => Self::hash_data(d, ipfs_rpc).await?,
             (d, false) => Self::add_data(d, ipfs_rpc).await?,
         };
-
         // see if the link exists and persist metadata
         let link = NodeLink::Data(link, maybe_object);
         self.upsert_node_link_at_path(path, link).await?;
@@ -605,7 +604,6 @@ impl Mount {
             current_node.put_object(&file_name, &object)?;
         }
         let mut current_cid = Self::put_cache::<Node>(&current_node, block_cache).await?;
-
         // Work backwards through visited nodes, updating links
         for (path, mut parent_node) in visited_nodes.into_iter().rev() {
             let name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -619,13 +617,6 @@ impl Mount {
         self.cid = Self::put::<Manifest>(&manifest, &self.ipfs_rpc).await?;
 
         Ok(())
-    }
-
-    pub async fn _hash_data<R>(&self, data: R) -> Result<Cid, MountError>
-    where
-        R: Read + Send + Sync + 'static + Unpin,
-    {
-        Self::hash_data(data, &self.ipfs_rpc).await
     }
 
     pub async fn hash_data<R>(data: R, ipfs_rpc: &IpfsRpc) -> Result<Cid, MountError>
@@ -651,7 +642,7 @@ impl Mount {
 
     async fn get<B>(cid: &Cid, ipfs_rpc: &IpfsRpc) -> Result<B, MountError>
     where
-        B: TryFrom<Ipld> + std::fmt::Debug + Send,
+        B: TryFrom<Ipld> + Send,
     {
         let ipld = ipfs_rpc.get_ipld(cid).await?;
         let object = B::try_from(ipld).map_err(|_| MountError::Ipld)?;
@@ -771,8 +762,6 @@ mod test {
         mount.set_schema(&PathBuf::from("/"), schema).await.unwrap();
         mount.tag(&PathBuf::from("/foo"), object).await.unwrap();
         let (links, schemas) = mount.ls_deep(&PathBuf::from("/")).await.unwrap();
-        println!("links: {:?}", links);
-        println!("schemas: {:?}", schemas);
         assert_eq!(links.len(), 1);
         assert!(links.get(&PathBuf::from("/foo")).is_some());
         assert_eq!(schemas.len(), 1);

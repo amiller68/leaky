@@ -29,9 +29,17 @@ impl Display for StatOutput {
             if diff_type == &ChangeType::Base {
                 continue;
             }
+            // skip if the path contains .obj or .schema
+            if path.to_str().unwrap().contains(".obj") || path.to_str().unwrap().contains(".schema") {
+                continue;
+            }
             changes = true;
-
-            s.push_str(&format!("{}: {}\n", path.to_str().unwrap(), diff_type));
+            // don't prefix the first line with a newline
+            if s.is_empty() {
+                s.push_str(&format!("{}: {}", path.to_str().unwrap(), diff_type));
+            } else {
+                s.push_str(&format!("\n{}: {}", path.to_str().unwrap(), diff_type));
+            }
         }
         if !changes {
             s.push_str("No changes");

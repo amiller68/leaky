@@ -65,38 +65,13 @@ impl Op for Pull {
             .iter()
             .map(|(path, schema)| (path.strip_prefix("/").unwrap().to_path_buf(), schema.clone()))
             .collect::<Vec<_>>();
-
         // Insert everything in the change log
         let mut change_log = ChangeLog::new();
         for (path, link) in pulled_items.iter() {
             change_log.insert(path.clone(), (*link.cid(), ChangeType::Base));
         }
 
-        // Handle schemas first
-        for (path, schema) in pulled_schemas {
-            let schema_path = path.join(".schema");
-            let schema_str = serde_json::to_string_pretty(&schema)?;
-            std::fs::create_dir_all(&path)?;
-            std::fs::write(&schema_path, schema_str)?;
-        }
-
-        // Handle objects
-        for (path, link) in pulled_items.iter() {
-            if let NodeLink::Data(_, Some(object)) = link {
-                // Create .obj directory
-                let obj_dir = path.parent().unwrap().join(".obj");
-                std::fs::create_dir_all(&obj_dir)?;
-                
-                // Create object file with format .name.json
-                let file_name = path.file_name().unwrap().to_str().unwrap();
-                let obj_path = obj_dir.join(format!(".{}.json", file_name));
-                
-                let obj_str = serde_json::to_string_pretty(&object)?;
-                std::fs::write(&obj_path, obj_str)?;
-            }
-        }
-
-        // Handle regular files
+        // Handle regular files and their objects together
         let current_fs_tree = utils::fs_tree()?;
 
         let mut pi_iter = pulled_items.iter();
@@ -114,49 +89,99 @@ impl Op for Pull {
         loop {
             match (pi_next, ci_next.clone()) {
                 (Some((pi_path, pi_link)), Some((ci_tree, ci_path))) => {
-                    // First check if ci is a dir, since we skip those
-                    if ci_tree.is_dir() {
+                    // Skip .obj directories and schema files
+                    if ci_tree.is_dir() || 
+                       ci_path.to_str().map_or(false, |p| p.contains("/.obj/")) ||
+                       ci_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
                         ci_next = ci_iter.next();
                         continue;
                     }
-                    if pi_path < &ci_path {
+
+                    let normalized_ci_path = if ci_path.to_str().map_or(false, |p| p.ends_with(".json")) {
+                        // Skip object files in comparison
+                        ci_next = ci_iter.next();
+                        continue
+                    } else {
+                        ci_path.clone()
+                    };
+
+                    // Skip schema files in pulled items comparison
+                    if pi_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                        pi_next = pi_iter.next();
+                        continue;
+                    }
+
+                    if pi_path < &normalized_ci_path {
                         to_pull.push((pi_path, pi_link.cid()));
-                    } else if pi_path > &ci_path {
-                        to_prune.push(ci_path);
-                    } else if file_needs_pull(&local_ipfs_rpc, &ci_path, pi_link.cid()).await?
+                        pi_next = pi_iter.next();
+                    } else if pi_path > &normalized_ci_path {
+                        to_prune.push(normalized_ci_path);
+                        ci_next = ci_iter.next();
+                    } else if file_needs_pull(&local_ipfs_rpc, &normalized_ci_path, pi_link.cid()).await?
                         && *pi_link.cid() != Cid::default()
                     {
                         to_pull.push((pi_path, pi_link.cid()));
+                        pi_next = pi_iter.next();
+                        ci_next = ci_iter.next();
+                    } else {
+                        pi_next = pi_iter.next();
+                        ci_next = ci_iter.next();
                     }
-                    pi_next = pi_iter.next();
-                    ci_next = ci_iter.next();
                 }
                 (Some(pi), None) => {
+                    // Skip schema files in pulled items
+                    if pi.0.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                        pi_next = pi_iter.next();
+                        continue;
+                    }
                     to_pull.push((&pi.0, pi.1.cid()));
                     pi_next = pi_iter.next();
                 }
-                (None, Some(ci)) => {
-                    to_prune.push(ci.1);
+                (None, Some((_, ci_path))) => {
+                    // Don't prune .obj directories or schema files
+                    if !ci_path.to_str().map_or(false, |p| p.contains("/.obj/")) &&
+                       !ci_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                        to_prune.push(ci_path);
+                    }
                     ci_next = ci_iter.next();
                 }
-                (None, None) => {
-                    break;
-                }
+                (None, None) => break,
             }
         }
 
-        for item in to_pull {
-            // Skip schema and object files as they're already handled
-            let path = item.0;
-            if path.ends_with(".schema") || path.parent().map_or(false, |p| p.ends_with(".obj")) {
-                continue;
-            }
+        // Handle regular files and their objects
+        for (path, _) in to_pull {
             pull_file(&mount, path).await?;
+            
+            // Write object file if it exists
+            let matching_item = pulled_items.iter().find(|(p, _)| p == path);
+            
+            if let Some((_, link)) = matching_item {
+                if let NodeLink::Data(_, Some(object)) = link {
+                    let obj_dir = path.parent().unwrap().join(".obj");
+                    std::fs::create_dir_all(&obj_dir)?;
+                    
+                    let file_name = path.file_name().unwrap().to_str().unwrap();
+                    let obj_path = obj_dir.join(format!(".{}.json", file_name));
+                    
+                    let obj_str = serde_json::to_string_pretty(&object)?;
+                    std::fs::write(&obj_path, obj_str)?;
+                }
+            }
         }
 
         for path in to_prune {
             rm_file(&path)?;
         }
+
+        // Handle schemas last, after all files are processed
+        for (path, schema) in pulled_schemas {
+            let schema_path = path.join(".schema");
+            let schema_str = serde_json::to_string_pretty(&schema)?;
+            std::fs::create_dir_all(&path)?;
+            std::fs::write(&schema_path, schema_str)?;
+        }
+
         let cid = *mount.cid();
         state.save(&mount, Some(&change_log), Some(cid))?;
         Ok(cid)
