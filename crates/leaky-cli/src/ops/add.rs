@@ -144,7 +144,9 @@ impl Op for Add {
                         ),
                     );
                 }
-                ChangeType::Removed { processed: false, .. } => {
+                ChangeType::Removed {
+                    processed: false, ..
+                } => {
                     // Remove schema from the parent directory
                     mount.unset_schema(parent_dir).await?;
                     if self.verbose {
@@ -152,10 +154,7 @@ impl Op for Add {
                     }
                     updates.insert(
                         path.clone(),
-                        (
-                            *hash,
-                            ChangeType::Removed { processed: true },
-                        ),
+                        (*hash, ChangeType::Removed { processed: true }),
                     );
                 }
                 _ => {}
@@ -205,18 +204,14 @@ impl Op for Add {
                         ),
                     );
                 }
-                ChangeType::Removed { processed: false, .. } => {
+                ChangeType::Removed {
+                    processed: false, ..
+                } => {
                     mount.rm(&abs_path).await?;
                     if self.verbose {
                         println!(" -> removing file @ {}", abs_path.display());
                     }
-                    updates.insert(
-                        path_clone,
-                        (
-                            *hash,
-                            ChangeType::Removed { processed: true },
-                        ),
-                    );
+                    updates.insert(path_clone, (*hash, ChangeType::Removed { processed: true }));
                 }
                 _ => {}
             }
@@ -291,17 +286,16 @@ impl Op for Add {
                         ),
                     );
                 }
-                ChangeType::Removed { processed: false, .. } => {
+                ChangeType::Removed {
+                    processed: false, ..
+                } => {
                     mount.rm_tag(&target_path).await?;
                     if self.verbose {
                         println!(" -> removing tag @ {}", target_path.display());
                     }
                     updates.insert(
                         path.clone(),
-                        (
-                            *hash,
-                            ChangeType::Removed { processed: true },
-                        ),
+                        (*hash, ChangeType::Removed { processed: true }),
                     );
                 }
                 _ => {}

@@ -83,7 +83,6 @@ impl Op for Push {
         // Update the changelog to drop removed, and set everything else to base
         let change_log_iter = change_log.iter_mut();
         for (path, (hash, diff_type)) in change_log_iter {
-            
             match diff_type {
                 // NOTE: we should never have an unprocessed removed
                 ChangeType::Removed { .. } => {

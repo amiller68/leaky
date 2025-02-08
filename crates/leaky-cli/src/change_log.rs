@@ -47,7 +47,7 @@ impl std::fmt::Display for ChangeType {
             Self::Base { .. } => "\x1b[0;32mBase\x1b[0m",
             Self::Added { .. } => "\x1b[0;32mAdded\x1b[0m",
             Self::Modified { .. } => "\x1b[0;33mModified\x1b[0m",
-            Self::Removed { .. }=> "\x1b[0;31mRemoved\x1b[0m",
+            Self::Removed { .. } => "\x1b[0;31mRemoved\x1b[0m",
         };
         write!(f, "{}", s)
     }

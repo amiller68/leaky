@@ -40,16 +40,10 @@ pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
                                 update.remove(&base_path);
                             }
                             ChangeType::Modified { .. } | ChangeType::Base { .. } => {
-                                update
-                                    .insert(
-                                        base_path.clone(),
-                                        (
-                                            default_hash,
-                                            ChangeType::Removed {
-                                                processed: false,
-                                            },
-                                        ),
-                                    );
+                                update.insert(
+                                    base_path.clone(),
+                                    (default_hash, ChangeType::Removed { processed: false }),
+                                );
                             }
                             // not our responsibility to process removed
                             ChangeType::Removed { .. } => {}
