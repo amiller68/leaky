@@ -37,12 +37,21 @@ pub async fn handler(
     };
     
     let mount_guard = state.mount_guard();
+
+    // print out the root cid
+    // print out the mount gaurd cid
+    println!("mount guard cid: {:?}", mount_guard.cid());
+    // print out the path
+    println!("path: {:?}", path);
+    // try lsing the root
+    let ls_result = mount_guard.ls(&PathBuf::from("/")).await;
+    println!("ls_result: {:?}", ls_result);
     
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
     
-    let ls_result = mount_guard.ls(&path, false).await;
-
+    let ls_result = mount_guard.ls(&path).await;
+    println!("ls_result: {:?}", ls_result);
     match ls_result {
         Ok((ls, _)) => {
             if !ls.is_empty() {

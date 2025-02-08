@@ -26,9 +26,9 @@ services:
     # Add this back for Windows/Mac compatibility
     extra_hosts:
       # for linux
-      # - "host.docker.internal:172.17.0.1"
+      - "host.docker.internal:172.17.0.1"
       # for mac
-      - "host.docker.internal:host-gateway"
+      # - "host.docker.internal:host-gateway"
 
 networks:
   app_network:

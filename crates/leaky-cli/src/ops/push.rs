@@ -78,7 +78,12 @@ impl Op for Push {
             }
         }
 
+        println!("updates: {:?}", updates);
+
         state.save(&mount, Some(&updates), Some(cid))?;
+
+        println!("saved");
+        println!("cid: {:?}", cid);
 
         Ok(cid)
     }

@@ -205,15 +205,16 @@ impl Node {
     pub fn put_object(
         &mut self,
         name: &str,
-        object: &Object,
-        maybe_schema: Option<Schema>,
+        object: &Object
     ) -> Result<(), NodeError> {
         if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
             return Err(NodeError::ReservedName(name.to_string()));
         }
+        let maybe_schema = self.schema();
 
         // get the link
         let mut object = object.clone();
+
         if let Some(NodeLink::Data(cid, maybe_object)) = self.links.get(name) {
             // if there's an object here already, we'll inhereit creation date
             if let Some(obj) = maybe_object {
@@ -234,6 +235,7 @@ impl Node {
             self.links
                 .insert(name.to_string(), NodeLink::Data(*cid, Some(object)));
         } else {
+            println!("link not found: {:?}", name);
             return Err(NodeError::LinkNotFound(name.to_string()));
         }
 
@@ -241,6 +243,7 @@ impl Node {
     }
 
     pub fn del(&mut self, name: &str) -> Option<NodeLink> {
+        // check if the link is an object
         self.links.remove(name)
     }
 
@@ -252,14 +255,15 @@ impl Node {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ipfs_rpc::IpfsRpc;
-    use crate::types::SchemaProperty;
-    use crate::types::SchemaType;
+    use crate::types::{SchemaProperty, SchemaType, RAW_IPLD_CODEC};
+
+    fn test_cid() -> Cid {
+        *Block::<DefaultParams>::encode(RAW_IPLD_CODEC, DEFAULT_HASH_CODE, &Ipld::Bytes("test".as_bytes().to_vec())).unwrap().cid()
+    }
 
     #[tokio::test]
-    async fn test_schema_validation() {
+    async fn test_schema_valid() {
         let mut node = Node::default();
-        let ipfs = IpfsRpc::default();
 
         // Set up a schema
         let mut schema = Schema::default();
@@ -272,44 +276,62 @@ mod tests {
             },
         );
 
+        node.set_schema(schema);
+
         // Test valid object
-        let test_data = "test".as_bytes();
-        let test_cid = ipfs.hash_data(test_data).await.unwrap();
+        let test_cid = test_cid();
+
         node.put_link("test.txt", test_cid).unwrap();
         let mut valid_object = Object::default();
         valid_object.insert("title".to_string(), Ipld::String("Test".to_string()));
         assert!(node
-            .put_object("test.txt", &valid_object, Some(schema.clone()))
+            .put_object("test.txt", &valid_object)
             .is_ok());
+    }
 
-        // Test invalid object (missing required field)
-        let invalid_object = Object::default();
-        node.put_link("test2.txt", test_cid).unwrap();
-        let res = node.put_object("test2.txt", &invalid_object, Some(schema.clone()));
-        assert!(matches!(res, Err(NodeError::Schema(_))));
+    #[tokio::test]
+    async fn test_schema_invalid() {
+        let mut node = Node::default();
 
-        // test whether setting the schema works
+        // Set up a schema
+        let mut schema = Schema::default();
+        schema.insert(
+            "title".to_string(),
+            SchemaProperty {
+                property_type: SchemaType::String,
+                description: None,
+                required: true,
+            },
+        );
+
         node.set_schema(schema);
-        node.put_link("test3.txt", test_cid).unwrap();
-        assert!(node.put_object("test3.txt", &valid_object, None).is_ok());
-        node.put_link("test4.txt", test_cid).unwrap();
-        assert!(matches!(
-            node.put_object("test4.txt", &invalid_object, None),
-            Err(NodeError::Schema(_))
-        ));
+
+        // Test valid object
+        let test_cid = test_cid();
+
+        node.put_link("test.txt", test_cid).unwrap();
+        let mut invalid_object = Object::default();
+        invalid_object.insert("_title".to_string(), Ipld::String("Test".to_string()));
+        assert!(node
+            .put_object("test.txt", &invalid_object)
+            .is_err());
+        let mut invalid_object = Object::default();
+        invalid_object.insert("title".to_string(), Ipld::Integer(1));
+        assert!(node
+            .put_object("test.txt", &invalid_object)
+            .is_err());
     }
 
     #[tokio::test]
     async fn test_ipld_serialization() {
         let mut node = Node::default();
-        let ipfs = IpfsRpc::default();
         // Add some test data
         let mut object = Object::default();
-        let test_data = "test".as_bytes();
-        let test_cid = ipfs.hash_data(test_data).await.unwrap();
+        let test_cid = test_cid();
         node.put_link("test.txt", test_cid).unwrap();
+
         object.insert("title".to_string(), Ipld::String("Test".to_string()));
-        node.put_object("test.txt", &object, None).unwrap();
+        node.put_object("test.txt", &object).unwrap();
 
         // Convert to IPLD and back
         let ipld: Ipld = node.clone().into();

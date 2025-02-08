@@ -11,6 +11,8 @@ pub use libipld::IpldCodec;
 
 pub const DEFAULT_IPLD_CODEC: IpldCodec = IpldCodec::DagCbor;
 pub const DEFAULT_IPLD_CODEC_STRING: &str = "dag-cbor";
+pub const RAW_IPLD_CODEC: IpldCodec = IpldCodec::Raw;
+pub const RAW_IPLD_CODEC_STRING: &str = "raw";
 pub const DEFAULT_HASH_CODE: MhCode = MhCode::Blake3_256;
 pub const DEFAULT_HASH_CODE_STRING: &str = "blake3";
 pub const DEFAULT_CID_VERSION: u32 = 1;

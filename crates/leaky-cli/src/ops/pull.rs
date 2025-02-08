@@ -1,8 +1,6 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::fs;
-use serde_json;
 
 use async_trait::async_trait;
 
@@ -55,19 +53,17 @@ impl Op for Pull {
         let local_ipfs_rpc = IpfsRpc::default();
         let mount = Mount::pull(cid, &ipfs_rpc).await?;
 
-        let (links, schemas) = mount.ls_with_schemas(&PathBuf::from("/"), true).await?;
-        println!("links: {:?}", links);
-        
-        let pulled_items = links
-            .into_iter()
-            .filter_map(|(path, link)| {
-                // Skip the root path
-                if path.as_os_str().is_empty() {
-                    return None;
-                }
-                // Convert absolute paths to relative
-                Some((path, link))
-            })
+        let (ls, schemas) = mount
+            .ls_deep(&PathBuf::from("/"))
+            .await?;
+
+        let pulled_items = ls
+            .iter()
+            .map(|(path, cid)| (path.strip_prefix("/").unwrap().to_path_buf(), cid.clone()))
+            .collect::<Vec<_>>();
+        let pulled_schemas = schemas
+            .iter()
+            .map(|(path, schema)| (path.strip_prefix("/").unwrap().to_path_buf(), schema.clone()))
             .collect::<Vec<_>>();
 
         // Insert everything in the change log
@@ -76,6 +72,31 @@ impl Op for Pull {
             change_log.insert(path.clone(), (*link.cid(), ChangeType::Base));
         }
 
+        // Handle schemas first
+        for (path, schema) in pulled_schemas {
+            let schema_path = path.join(".schema");
+            let schema_str = serde_json::to_string_pretty(&schema)?;
+            std::fs::create_dir_all(&path)?;
+            std::fs::write(&schema_path, schema_str)?;
+        }
+
+        // Handle objects
+        for (path, link) in pulled_items.iter() {
+            if let NodeLink::Data(_, Some(object)) = link {
+                // Create .obj directory
+                let obj_dir = path.parent().unwrap().join(".obj");
+                std::fs::create_dir_all(&obj_dir)?;
+                
+                // Create object file with format .name.json
+                let file_name = path.file_name().unwrap().to_str().unwrap();
+                let obj_path = obj_dir.join(format!(".{}.json", file_name));
+                
+                let obj_str = serde_json::to_string_pretty(&object)?;
+                std::fs::write(&obj_path, obj_str)?;
+            }
+        }
+
+        // Handle regular files
         let current_fs_tree = utils::fs_tree()?;
 
         let mut pi_iter = pulled_items.iter();
@@ -124,16 +145,13 @@ impl Op for Pull {
             }
         }
 
-        // First pass - write schema files
-        for (path, schema) in schemas {
-            let schema_file = path.join(".schema");
-            fs::create_dir_all(&path)?;
-            fs::write(&schema_file, serde_json::to_string_pretty(&schema)?)?;
-        }
-
-        // Second pass - write files and their object metadata
         for item in to_pull {
-            pull_file(&mount, item.0).await?;
+            // Skip schema and object files as they're already handled
+            let path = item.0;
+            if path.ends_with(".schema") || path.parent().map_or(false, |p| p.ends_with(".obj")) {
+                continue;
+            }
+            pull_file(&mount, path).await?;
         }
 
         for path in to_prune {
@@ -164,44 +182,13 @@ pub async fn file_needs_pull(
     }
 }
 
-async fn pull_file(mount: &Mount, path: &PathBuf) -> Result<(), PullError> {
-    // Get the node link at this path to check if it has object metadata
-    let abs_path = PathBuf::from("/").join(path);
-    let parent_path = abs_path.parent()
-        .ok_or_else(|| PullError::Default(anyhow::anyhow!("File has no parent path")))?;
-    let file_name = path.file_name()
-        .ok_or_else(|| PullError::Default(anyhow::anyhow!("Invalid file name")))?;
-
-    // Get the parent directory's links to find our file
-    let (links, _) = mount.ls(parent_path, false).await?;
-    let node_link = links.iter()
-        .find(|(p, _)| *p == &PathBuf::from(file_name))
-        .map(|(_, link)| link.clone())
-        .ok_or_else(|| PullError::Default(anyhow::anyhow!("File not found")))?;
-
-    // Create parent directory
+pub async fn pull_file(mount: &Mount, path: &PathBuf) -> Result<(), PullError> {
+    let data_vec = mount.cat(&PathBuf::from("/").join(path)).await?;
     let mut object_path = path.clone();
     object_path.pop();
-    fs::create_dir_all(&object_path)?;
-
-    // If this is a data link with object metadata, write it to .obj/
-    if let NodeLink::Data(_, Some(object)) = node_link {
-        // Create .obj directory next to file
-        let obj_dir = object_path.join(".obj");
-        fs::create_dir_all(&obj_dir)?;
-        
-        // Write object to .name.json in .obj directory
-        let file_name = file_name.to_str()
-            .ok_or_else(|| PullError::Default(anyhow::anyhow!("Invalid file name encoding")))?;
-        let obj_file = obj_dir.join(format!(".{}.json", file_name));
-        fs::write(&obj_file, serde_json::to_string_pretty(&object)?)?;
-    }
-
-    // Pull the actual file data
-    let data_vec = mount.cat(&abs_path).await?;
-    let mut file = fs::File::create(path)?;
+    std::fs::create_dir_all(object_path)?;
+    let mut file = std::fs::File::create(path)?;
     file.write_all(data_vec.as_slice())?;
-
     Ok(())
 }
 

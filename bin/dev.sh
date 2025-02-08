@@ -14,6 +14,7 @@ print_usage() {
 	echo "  logs      View logs of all services"
 	echo "  ps        List running services"
 	echo "  shell     Open a shell in a service container"
+	echo "  test      Run integration tests"
 }
 # Function to start leaky server in a new tmux session
 start_leaky_server() {
@@ -111,6 +112,18 @@ shell)
 	fi
 	echo -e "${GREEN}Opening shell in $2 service...${NC}"
 	$DOCKER_COMPOSE_CMD exec $2 /bin/sh
+	;;
+test)
+	echo -e "${GREEN}Running integration tests...${NC}"
+	# Start services in test mode
+	$DOCKER_COMPOSE_CMD up -d --build
+	start_leaky_server
+	
+	# Run the tests
+	cd crates/leaky-cli && cargo test --test integration_test -- --test-threads=1
+	
+	# Cleanup
+	./bin/dev.sh down
 	;;
 *)
 	print_usage

@@ -108,8 +108,16 @@ pub struct MountGuard {
 unsafe impl Send for MountGuard {}
 
 impl MountGuard {
-    pub async fn ls(&self, path: &Path, deep: bool) -> Result<(BTreeMap<PathBuf, NodeLink>, Option<Schema>), MountError> {
-        self._lock.ls(path, deep).await
+    pub fn cid(&self) -> &Cid {
+        self._lock.cid()
+    }
+
+    pub async fn ls(&self, path: &Path) -> Result<(BTreeMap<PathBuf, NodeLink>, Option<Schema>), MountError> {
+        self._lock.ls(path).await
+    }
+
+    pub async fn ls_deep(&self, path: &Path) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
+        self._lock.ls_deep(path).await
     }
 
     pub async fn cat(&self, path: &Path) -> Result<Vec<u8>, MountError> {
