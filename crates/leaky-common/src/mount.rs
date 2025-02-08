@@ -81,7 +81,6 @@ impl Mount {
         self.manifest.lock().set_previous(previous);
     }
 
-
     // mount sync
 
     /// Initialize a fresh mount against a given ipfs rpc
@@ -176,21 +175,17 @@ impl Mount {
 
         // get a cid link to insert regardles of if we are hashing or not
         let link = match data {
-            (d, true) => {
-                Self::hash_data(d, ipfs_rpc).await?
-            }
-            (d, false) => {
-                Self::add_data(d, ipfs_rpc).await?
-            }
+            (d, true) => Self::hash_data(d, ipfs_rpc).await?,
+            (d, false) => Self::add_data(d, ipfs_rpc).await?,
         };
-        
+
         // see if the link exists and persist metadata
         let link = NodeLink::Data(link, maybe_object);
         self.upsert_node_link_at_path(path, link).await?;
 
         Ok(())
     }
-    
+
     /// remove data or node at a given path within the mount
     ///  Will remove objects and schemas at the given path
     ///  if removing a node
@@ -208,7 +203,7 @@ impl Mount {
         let mut node = self.get_node_at_path(parent_path).await?;
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
         match node.del(&file_name) {
-            Some(_) =>(),
+            Some(_) => (),
             None => return Err(MountError::PathNotFound(path.to_path_buf())),
         }
         self.upsert_node_at_path(parent_path, node).await?;
@@ -216,7 +211,7 @@ impl Mount {
     }
 
     /// Get all node links and the schema at a given path
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `path` - the path to get the node links and schema at
@@ -233,7 +228,9 @@ impl Mount {
         let node = match self.get_node_at_path(path).await {
             Ok(node) => node,
             // TODO: this is not super precise, but it works for now
-            Err(MountError::BlockCacheMiss(_)) => return Err(MountError::PathNotDir(path.to_path_buf())),
+            Err(MountError::BlockCacheMiss(_)) => {
+                return Err(MountError::PathNotDir(path.to_path_buf()))
+            }
             Err(err) => return Err(err),
         };
         for (name, link) in node.get_links() {
@@ -244,7 +241,7 @@ impl Mount {
     }
 
     /// Get all child nodes and schemas at a given path
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `path` - the path to get the child nodes and schemas at
@@ -253,12 +250,12 @@ impl Mount {
     ///
     /// * `Ok((nodes, schemas))` - if the child nodes and schemas were found
     /// * `Err(MountError)` - if the child nodes and schemas could not be found
-    pub async fn ls_deep(&self, path: &Path) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
+    pub async fn ls_deep(
+        &self,
+        path: &Path,
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         self.get_nodes_links_and_schemas_at_path(path).await
     }
-
-
-
 
     /// cat data at a given path within the mount
     ///  Does and should not handle getting object or schema
@@ -279,14 +276,14 @@ impl Mount {
             NodeLink::Data(cid, _) => {
                 let data = Self::cat_data(&cid, ipfs_rpc).await?;
                 Ok(data)
-            },
+            }
             NodeLink::Node(_) => Err(MountError::PathNotFile(path.to_path_buf())),
         }
     }
 
     /// add a schema at a given path within the mount
     ///  Does and should not handle inserting object or data into the mount
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `path` - the path to add the schema at
@@ -316,10 +313,9 @@ impl Mount {
         Ok(())
     }
 
-
     /// Get a node at a given path
     ///  Nodes are returned if the path ends in a node.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `path` - the path to get the node at
@@ -339,7 +335,7 @@ impl Mount {
     }
 
     /// Get all child node links and schemas at a given path
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `path` - the path to get the node links and schemas at
@@ -348,7 +344,10 @@ impl Mount {
     ///
     /// * `Ok((links, schemas))` - if the links and schemas were found
     /// * `Err(MountError)` - if the links and schemas could not be found
-    pub async fn get_nodes_links_and_schemas_at_path(&self, path: &Path) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
+    pub async fn get_nodes_links_and_schemas_at_path(
+        &self,
+        path: &Path,
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         let block_cache = &self.block_cache;
         // let path = clean_path(path);
         let node = self.get_node_at_path(&path).await?;
@@ -356,7 +355,7 @@ impl Mount {
     }
 
     /// Traverse a node in order to the the target node at the given path
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `node` - the node to traverse
@@ -367,16 +366,17 @@ impl Mount {
     ///
     /// * `Ok(node)` - if the node was found
     /// * `Err(MountError)` - if the node could not be found
-    async fn _get_node_at_path(node: &Node, path: &PathBuf, block_cache: &Arc<Mutex<BlockCache>>) -> Result<Node, MountError> {
+    async fn _get_node_at_path(
+        node: &Node,
+        path: &PathBuf,
+        block_cache: &Arc<Mutex<BlockCache>>,
+    ) -> Result<Node, MountError> {
         let mut current_node = node.clone();
         // keep track of our consumed path and remaining path
         let mut consumed_path = PathBuf::from("/");
 
-        println!("GET NODE AT PATH: {:?}", path);
-
         // iterate through the path and get the node at each step
         for part in path.iter() {
-            
             consumed_path.push(part);
             let next = part.to_string_lossy().to_string();
             // get the next link
@@ -391,11 +391,11 @@ impl Mount {
                     // this was not a node
                     MountError::Ipld => {
                         return Err(MountError::PathNotNode(consumed_path.clone()));
-                    },
+                    }
                     // the path was not found
                     MountError::PathNotFound(_) => {
                         return Err(MountError::PathNotFound(consumed_path.clone()));
-                    },
+                    }
                     // otherwise
                     err => return Err(err),
                 },
@@ -405,9 +405,8 @@ impl Mount {
         Ok(current_node)
     }
 
-
     /// Get all child node links and schemas at a given path
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `node` - the node to traverse
@@ -419,7 +418,11 @@ impl Mount {
     /// * `Ok((links, schemas))` - if the links and schemas were found
     /// * `Err(MountError)` - if the links and schemas could not be found
     #[async_recursion::async_recursion]
-    async fn _get_nodes_links_and_schemas_at_path(node: &Node, consumed_path: &PathBuf, block_cache: &Arc<Mutex<BlockCache>>) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
+    async fn _get_nodes_links_and_schemas_at_path(
+        node: &Node,
+        consumed_path: &PathBuf,
+        block_cache: &Arc<Mutex<BlockCache>>,
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         let mut links = BTreeMap::new();
         let mut schemas = BTreeMap::new();
         // append our schema if it exists
@@ -430,7 +433,12 @@ impl Mount {
         for (name, link) in node.get_links() {
             if let NodeLink::Node(cid) = link {
                 let node = Self::get_cache::<Node>(cid, block_cache).await?;
-                let (mut _links, mut _schemas) = Self::_get_nodes_links_and_schemas_at_path(&node, &consumed_path.join(&name), block_cache).await?;
+                let (mut _links, mut _schemas) = Self::_get_nodes_links_and_schemas_at_path(
+                    &node,
+                    &consumed_path.join(&name),
+                    block_cache,
+                )
+                .await?;
                 links.extend(_links);
                 schemas.extend(_schemas);
             }
@@ -443,7 +451,7 @@ impl Mount {
     }
 
     /// Get a node link at a given path
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `path` - the path to get the node link at
@@ -455,18 +463,21 @@ impl Mount {
     async fn get_node_link_at_path(&self, path: &Path) -> Result<NodeLink, MountError> {
         // split off the file name from the path
         // TODO: this is kinda hacky, not sure if this unwrap is safe
-        let maybe_file_name = path.file_name()
+        let maybe_file_name = path
+            .file_name()
             .ok_or_else(|| MountError::PathNotFound(path.to_path_buf()))?
             .to_string_lossy()
             .to_string();
-        let parent_path = path.parent()
+        let parent_path = path
+            .parent()
             .ok_or_else(|| MountError::PathNotFound(path.to_path_buf()))?;
         let parent_node = self.get_node_at_path(&parent_path).await?;
 
         // Get the final link
-        let link = parent_node.get_link(&maybe_file_name)
+        let link = parent_node
+            .get_link(&maybe_file_name)
             .ok_or(MountError::PathNotFound(path.to_path_buf()))?;
-        
+
         Ok(link.clone())
     }
 
@@ -495,17 +506,16 @@ impl Mount {
         Ok(())
     }
 
-
     /// Upsert a node at a given path within the mount with a single traversal
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `path` - the path to upsert the node at
     /// * `node` - the node to upsert
-    /// 
+    ///
     /// # Returns
-    /// 
-    /// * `Ok(())` - if the node was upserted successfully 
+    ///
+    /// * `Ok(())` - if the node was upserted successfully
     /// * `Err(MountError)` - if the node could not be upserted
     pub async fn upsert_node_at_path(&mut self, path: &Path, node: Node) -> Result<(), MountError> {
         let block_cache = &self.block_cache;
@@ -514,7 +524,7 @@ impl Mount {
         // Get our entry into the mount
         let data_node_cid = *self.manifest.lock().data();
         let mut current_node = Self::get_cache::<Node>(&data_node_cid, block_cache).await?;
-        
+
         // Keep track of visited nodes and their paths
         let mut visited_nodes = Vec::new();
         let mut consumed_path = PathBuf::from("/");
@@ -523,10 +533,10 @@ impl Mount {
         for part in path.iter() {
             consumed_path.push(part);
             let next = part.to_string_lossy().to_string();
-            
+
             // Save current node before moving to next
             visited_nodes.push((consumed_path.clone(), current_node.clone()));
-            
+
             // Try to get next node or create new one
             // NOTE (amiller68): for now, by the default, treat this as if it was called right after
             //  mkdir -p. This means that if the path doesn't exist, we create it.
@@ -554,7 +564,11 @@ impl Mount {
         Ok(())
     }
 
-    pub async fn upsert_node_link_at_path(&mut self, path: &Path, node_link: NodeLink) -> Result<(), MountError> {
+    pub async fn upsert_node_link_at_path(
+        &mut self,
+        path: &Path,
+        node_link: NodeLink,
+    ) -> Result<(), MountError> {
         let path = clean_path(path);
         let parent_path = path.parent().unwrap();
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
@@ -572,11 +586,10 @@ impl Mount {
         for part in parent_path.iter() {
             consumed_path.push(part);
             let next = part.to_string_lossy().to_string();
-            
-            
+
             // Save current node before moving to next
             visited_nodes.push((consumed_path.clone(), current_node.clone()));
-            
+
             // Try to get next node or create new one
             // NOTE (amiller68): for now, by the default, treat this as if it was called right after
             //  mkdir -p. This means that if the path doesn't exist, we create it.
@@ -743,20 +756,20 @@ mod test {
         let mut object = Object::default();
         object.insert("foo".to_string(), Ipld::String("bar".to_string()));
         let mut schema = Schema::default();
-        schema.insert("foo".to_string(), SchemaProperty {
-            property_type: SchemaType::String,
-            description: Some("foo".to_string()),
-            required: true,
-        });
+        schema.insert(
+            "foo".to_string(),
+            SchemaProperty {
+                property_type: SchemaType::String,
+                description: Some("foo".to_string()),
+                required: true,
+            },
+        );
         mount
             .add(&PathBuf::from("/foo"), (data, true))
             .await
             .unwrap();
         mount.set_schema(&PathBuf::from("/"), schema).await.unwrap();
-        mount
-            .tag(&PathBuf::from("/foo"), object)
-            .await
-            .unwrap();
+        mount.tag(&PathBuf::from("/foo"), object).await.unwrap();
         let (links, schemas) = mount.ls_deep(&PathBuf::from("/")).await.unwrap();
         println!("links: {:?}", links);
         println!("schemas: {:?}", schemas);

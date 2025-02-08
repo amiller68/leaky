@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -32,10 +33,26 @@ pub enum PushError {
     AppState(#[from] crate::state::AppStateSetupError),
 }
 
+#[derive(Debug)]
+pub struct PushOutput {
+    pub previous_cid: Cid,
+    pub cid: Cid,
+}
+
+impl Display for PushOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.previous_cid == self.cid {
+            write!(f, "No changes to push")
+        } else {
+            write!(f, "{} -> {}", self.previous_cid, self.cid)
+        }
+    }
+}
+
 #[async_trait]
 impl Op for Push {
     type Error = PushError;
-    type Output = Cid;
+    type Output = PushOutput;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
         let mut client = state.client()?;
@@ -43,17 +60,15 @@ impl Op for Push {
         let previous_cid = *state.previous_cid();
 
         if cid == previous_cid {
-            println!("No changes to push");
-            return Ok(cid);
+            return Ok(PushOutput { previous_cid, cid });
         }
 
         let mut change_log = state.change_log().clone();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
-        println!("pulling cid: {:?}", cid);
         let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
 
-        println!("pushing cid: {:?}", cid);
-        mount.set_previous(previous_cid);
+        // TODO: figure out if this breaks anything
+        // mount.set_previous(previous_cid);
         mount.push().await?;
         let cid = *mount.cid();
 
@@ -61,7 +76,6 @@ impl Op for Push {
             cid: cid.to_string(),
             previous_cid: previous_cid.to_string(),
         };
-        println!("Pushing root: {:?}", push_root_req);
         client.call(push_root_req).await?;
 
         let mut updates = change_log.clone();
@@ -78,13 +92,8 @@ impl Op for Push {
             }
         }
 
-        println!("updates: {:?}", updates);
-
         state.save(&mount, Some(&updates), Some(cid))?;
 
-        println!("saved");
-        println!("cid: {:?}", cid);
-
-        Ok(cid)
+        Ok(PushOutput { previous_cid, cid })
     }
 }

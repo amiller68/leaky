@@ -16,14 +16,10 @@ use state::AppState;
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
     // Run the app and capture any errors
     let args = Args::parse();
-    println!("args: {:?}", args);
     let state = AppState::try_from(&args).expect("valid state");
-    println!("state init complete");
     let op = args.command.clone();
-    println!("op: {:?}", op);
     match op.execute(&state).await {
         Ok(r) => println!("{}", r),
         Err(e) => {

@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -106,10 +107,26 @@ async fn handle_object_file(
     Ok(())
 }
 
+#[derive(Debug)]
+pub struct AddOutput {
+    pub previous_cid: Cid,
+    pub cid: Cid,
+}
+
+impl Display for AddOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.previous_cid == self.cid {
+            write!(f, "No changes to add")
+        } else {
+            write!(f, "{} -> {}", self.previous_cid, self.cid)
+        }
+    }
+}
+
 #[async_trait]
 impl Op for Add {
     type Error = AddError;
-    type Output = Cid;
+    type Output = AddOutput;
 
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
         let mut client = state.client()?;
@@ -181,9 +198,6 @@ impl Op for Add {
                         ChangeType::Added { .. } | ChangeType::Modified => {
                             handle_object_file(&mut mount, &path, &abs_path).await?;
                         }
-                        ChangeType::Removed => {
-                            // TODO: Object removal not yet supported
-                        }
                         _ => continue,
                     }
                 }
@@ -194,12 +208,17 @@ impl Op for Add {
         let new_cid = *mount.cid();
 
         if new_cid == cid {
-            println!("No changes to add");
-            return Ok(cid);
+            return Ok(AddOutput {
+                previous_cid: cid,
+                cid: new_cid,
+            });
         }
 
         state.save(&mount, Some(&updates), None)?;
 
-        Ok(new_cid)
+        Ok(AddOutput {
+            previous_cid: cid,
+            cid: new_cid,
+        })
     }
 }

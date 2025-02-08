@@ -65,18 +65,3 @@ impl ChangeLog {
         Self(BTreeMap::new())
     }
 }
-
-pub struct DisplayableChangeLog(pub ChangeLog);
-
-impl std::fmt::Display for DisplayableChangeLog {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = String::new();
-        for (path, (_hash, diff_type)) in self.0.iter() {
-            if diff_type == &ChangeType::Base {
-                continue;
-            }
-            s.push_str(&format!("{}: {}\n", path.to_str().unwrap(), diff_type));
-        }
-        write!(f, "{}", s)
-    }
-}
