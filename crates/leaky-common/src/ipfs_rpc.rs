@@ -9,10 +9,10 @@ use ipfs_api_backend_hyper::request::{Add as AddRequest, BlockPut as BlockPutReq
 use ipfs_api_backend_hyper::{IpfsApi, IpfsClient, TryFromUri};
 use url::Url;
 
-use crate::types::{Cid, IpldCodec, MhCode};
-
-const DEFAULT_CID_VERSION: u32 = 1;
-const DEFAULT_MH_TYPE: &str = "blake3";
+use crate::types::{
+    block_from_data, ipld_from_block, ipld_to_block, Cid, Ipld, DEFAULT_CID_VERSION,
+    DEFAULT_HASH_CODE_STRING, DEFAULT_IPLD_CODEC_STRING,
+};
 
 #[derive(Clone)]
 pub struct IpfsRpc {
@@ -51,17 +51,26 @@ impl IpfsRpc {
         self
     }
 
-    pub async fn hash_data<R>(&self, code: MhCode, data: R) -> Result<Cid, IpfsRpcError>
+    pub async fn has_pinned(&self, cid: &Cid) -> Result<bool, IpfsRpcError> {
+        let cid = *cid;
+        let client = self.client.clone();
+        let response = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current()
+                .block_on(async move { client.pin_ls(Some(&cid.to_string()), None).await })
+        })
+        .await
+        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
+
+        let keys = response.keys;
+        Ok(keys.contains_key(&cid.to_string()))
+    }
+
+    pub async fn hash_data<R>(&self, data: R) -> Result<Cid, IpfsRpcError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
-        let hash = match code {
-            MhCode::Blake3_256 => "blake3",
-            MhCode::Sha3_256 => "sha3-256",
-            _ => DEFAULT_MH_TYPE,
-        };
         let options = AddRequest {
-            hash: Some(hash),
+            hash: Some(DEFAULT_HASH_CODE_STRING),
             cid_version: Some(DEFAULT_CID_VERSION),
             only_hash: Some(true),
             ..Default::default()
@@ -78,29 +87,25 @@ impl IpfsRpc {
         Ok(cid)
     }
 
-    pub async fn add_data<R>(&self, code: MhCode, data: R) -> Result<Cid, IpfsRpcError>
+    pub async fn add_data<R>(&self, data: R) -> Result<Cid, IpfsRpcError>
     where
         R: Read + Send + Sync + 'static + Unpin,
     {
-        let hash = match code {
-            MhCode::Blake3_256 => "blake3",
-            MhCode::Sha3_256 => "sha3-256",
-            _ => DEFAULT_MH_TYPE,
-        };
-
         let options = AddRequest {
-            hash: Some(hash),
+            hash: Some(DEFAULT_HASH_CODE_STRING),
             cid_version: Some(DEFAULT_CID_VERSION),
             ..Default::default()
         };
 
         let client = self.client.clone();
+
         let response = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current()
                 .block_on(async move { client.add_with_options(data, options).await })
         })
         .await
         .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
+
         let cid = Cid::from_str(&response.hash)?;
 
         Ok(cid)
@@ -129,31 +134,13 @@ impl IpfsRpc {
     }
 
     // NOTE: had to wrap the client call in a spawn_blocking because the client doesn't implement Send
-    pub async fn put_block<R>(
-        &self,
-        codec: IpldCodec,
-        code: MhCode,
-        data: R,
-    ) -> Result<Cid, IpfsRpcError>
-    where
-        R: Read + Send + Sync + 'static + Unpin,
-    {
-        let cic_codec = match codec {
-            IpldCodec::DagCbor => "dag-cbor",
-            IpldCodec::DagJson => "dag-json",
-            IpldCodec::DagPb => "dag-pb",
-            IpldCodec::Raw => "raw",
-        };
-
-        let mhtype = match code {
-            MhCode::Blake3_256 => "blake3",
-            MhCode::Sha3_256 => "sha3-256",
-            _ => DEFAULT_MH_TYPE,
-        };
-
+    pub async fn put_ipld<T: Into<Ipld>>(&self, ipld: T) -> Result<Cid, IpfsRpcError> {
+        let ipld = ipld.into();
+        let block = ipld_to_block(ipld);
+        let cursor = std::io::Cursor::new(block.data().to_vec());
         let options = BlockPutRequest {
-            mhtype: Some(mhtype),
-            cid_codec: Some(cic_codec),
+            mhtype: Some(DEFAULT_HASH_CODE_STRING),
+            cid_codec: Some(DEFAULT_IPLD_CODEC_STRING),
             pin: Some(true),
             ..Default::default()
         };
@@ -161,7 +148,7 @@ impl IpfsRpc {
         let client = self.client.clone();
         let result = tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current()
-                .block_on(async move { client.block_put_with_options(data, options).await })
+                .block_on(async move { client.block_put_with_options(cursor, options).await })
         })
         .await
         .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
@@ -171,42 +158,16 @@ impl IpfsRpc {
         Ok(cid)
     }
 
-    pub async fn has_block(&self, cid: &Cid) -> Result<bool, IpfsRpcError> {
-        let cid = *cid;
-        let client = self.client.clone();
-        let response = tokio::task::spawn_blocking(move || {
-            tokio::runtime::Handle::current()
-                .block_on(async move { client.pin_ls(Some(&cid.to_string()), None).await })
-        })
-        .await
-        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))??;
-
-        let keys = response.keys;
-        Ok(keys.contains_key(&cid.to_string()))
-    }
-
-    pub async fn get_block(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
+    pub async fn get_ipld(&self, cid: &Cid) -> Result<Ipld, IpfsRpcError> {
         let cid = *cid;
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             tokio::runtime::Handle::current().block_on(async move {
                 let stream = client.block_get(&cid.to_string());
                 let block_data = stream.map_ok(|chunk| chunk.to_vec()).try_concat().await?;
-                Ok(block_data)
-            })
-        })
-        .await
-        .map_err(|e| IpfsRpcError::Default(anyhow::anyhow!("Join error: {}", e)))?
-    }
-
-    pub async fn get_block_send_safe(&self, cid: &Cid) -> Result<Vec<u8>, IpfsRpcError> {
-        let cid = *cid;
-        let client = self.client.clone();
-        tokio::task::spawn_blocking(move || {
-            tokio::runtime::Handle::current().block_on(async move {
-                let stream = client.block_get(&cid.to_string());
-                let block_data = stream.map_ok(|chunk| chunk.to_vec()).try_concat().await?;
-                Ok(block_data)
+                let block = block_from_data(cid, block_data)?;
+                let ipld = ipld_from_block(block)?;
+                Ok(ipld)
             })
         })
         .await
@@ -233,6 +194,8 @@ pub enum IpfsRpcError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libipld::IpldCodec;
+    use std::collections::BTreeMap;
 
     /// Generate a random 1 KB reader
     fn random_reader() -> impl Read {
@@ -244,83 +207,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_add_data_sha3_256() {
-        let ipfs = IpfsRpc::default();
-        let data = random_reader();
-        let mh_code = MhCode::Sha3_256;
-        let cid = ipfs.add_data(mh_code, data).await.unwrap();
-        assert_eq!(cid.version(), libipld::cid::Version::V1);
-        assert_eq!(IpldCodec::try_from(cid.codec()).unwrap(), IpldCodec::Raw);
-        assert_eq!(cid.hash().code(), 0x16);
-    }
-
-    #[tokio::test]
     async fn test_add_data_cat_data() {
         let ipfs = IpfsRpc::default();
         let data = std::io::Cursor::new(b"hello world");
-        let mh_code = MhCode::Sha3_256;
-        let cid = ipfs.add_data(mh_code, data).await.unwrap();
+        let cid = ipfs.add_data(data).await.unwrap();
         let cat_data = ipfs.cat_data(&cid).await.unwrap();
         assert_eq!(cat_data.len(), 11);
         assert_eq!(cat_data, b"hello world");
     }
 
     #[tokio::test]
-    async fn test_add_data_blake3_256() {
+    async fn test_add_data_blake3_256_raw() {
         let ipfs = IpfsRpc::default();
         let data = random_reader();
-        let mh_code = MhCode::Blake3_256;
-        let cid = ipfs.add_data(mh_code, data).await.unwrap();
+        let cid = ipfs.add_data(data).await.unwrap();
         assert_eq!(cid.version(), libipld::cid::Version::V1);
         assert_eq!(IpldCodec::try_from(cid.codec()).unwrap(), IpldCodec::Raw);
         assert_eq!(cid.hash().code(), 0x1e);
-    }
-
-    #[tokio::test]
-    async fn test_put_block_sha3_256_raw() {
-        let ipfs = IpfsRpc::default();
-        let data = random_reader();
-        let mh_code = MhCode::Sha3_256;
-        let codec = IpldCodec::Raw;
-        let cid = ipfs.put_block(codec, mh_code, data).await.unwrap();
-        assert_eq!(cid.version(), libipld::cid::Version::V1);
-        assert_eq!(IpldCodec::try_from(cid.codec()).unwrap(), IpldCodec::Raw);
-        assert_eq!(cid.hash().code(), 0x16);
-    }
-
-    #[tokio::test]
-    async fn test_put_block_blake3_256_raw() {
-        let ipfs = IpfsRpc::default();
-        let data = random_reader();
-        let mh_code = MhCode::Blake3_256;
-        let codec = IpldCodec::Raw;
-        let cid = ipfs.put_block(codec, mh_code, data).await.unwrap();
-        assert_eq!(cid.version(), libipld::cid::Version::V1);
-        assert_eq!(IpldCodec::try_from(cid.codec()).unwrap(), IpldCodec::Raw);
-        assert_eq!(cid.hash().code(), 0x1e);
-    }
-    #[tokio::test]
-    async fn test_put_block_sha3_256_dag_cbor() {
-        let ipfs = IpfsRpc::default();
-        let data = random_reader();
-        let mh_code = MhCode::Sha3_256;
-        let codec = IpldCodec::DagCbor;
-        let cid = ipfs.put_block(codec, mh_code, data).await.unwrap();
-        assert_eq!(cid.version(), libipld::cid::Version::V1);
-        assert_eq!(
-            IpldCodec::try_from(cid.codec()).unwrap(),
-            IpldCodec::DagCbor
-        );
-        assert_eq!(cid.hash().code(), 0x16);
     }
 
     #[tokio::test]
     async fn test_put_block_blake3_256_dag_cbor() {
         let ipfs = IpfsRpc::default();
-        let data = random_reader();
-        let mh_code = MhCode::Blake3_256;
-        let codec = IpldCodec::DagCbor;
-        let cid = ipfs.put_block(codec, mh_code, data).await.unwrap();
+        let mut map = BTreeMap::new();
+        map.insert("hello".to_string(), Ipld::String("world".to_string()));
+        let cid = ipfs.put_ipld(Ipld::Map(map)).await.unwrap();
         assert_eq!(cid.version(), libipld::cid::Version::V1);
         assert_eq!(
             IpldCodec::try_from(cid.codec()).unwrap(),

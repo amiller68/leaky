@@ -1,176 +1,352 @@
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::ops::Deref;
 
-use super::ipld::{Cid, Ipld};
-use super::object::Object;
+use serde::{Deserialize, Serialize};
 
-// Reserved metadata key for detailing what links
+use super::ipld::{Block, Cid, DefaultParams, Ipld, IpldCodec};
+use super::object::{Object, ObjectError};
+use super::schema::{Schema, SchemaError};
+use super::{DEFAULT_HASH_CODE, DEFAULT_IPLD_CODEC};
+
+// TODO: not allowing node links to exist as nodes is a bit of a hack
+//  and creates issues down the line writing logic around nodes vs node links
+
+// Reserved object key for detailing what links
 //  within have visible metatdata attached to them
-const METADATA_KEY: &str = ".metadata";
+// NOTE: i'd like to name this to .object, but this makes us compatible with
+//  prior versions of the data format
+const NODE_OBJECT_KEY: &str = ".metadata";
+const NODE_SCHEMA_KEY: &str = ".schema";
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Node(BTreeMap<String, Ipld>);
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum NodeLink {
+    Data(Cid, Option<Object>),
+    Node(Cid),
+}
 
-impl Default for Node {
-    fn default() -> Self {
-        // Create an empty .metadata map
-        let metadata = BTreeMap::new();
-        let mut map = BTreeMap::new();
-        map.insert(METADATA_KEY.to_string(), Ipld::Map(metadata));
-        Self(map)
+impl NodeLink {
+    pub fn cid(&self) -> &Cid {
+        match self {
+            NodeLink::Data(cid, _) | NodeLink::Node(cid) => cid,
+        }
+    }
+
+    pub fn is_data(&self) -> bool {
+        matches!(self, NodeLink::Data(_, _))
     }
 }
 
+impl From<NodeLink> for Ipld {
+    fn from(link: NodeLink) -> Self {
+        Ipld::Link(*link.cid())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Node {
+    /// Links to other nodes/data
+    links: BTreeMap<String, NodeLink>,
+    /// Object defs for data in this directory
+    schema: Option<Schema>,
+}
+
+// TODO: might be nice to do some validation that data links point to
+//  codecs that specify the correct cid type
 impl From<Node> for Ipld {
     fn from(node: Node) -> Self {
-        Ipld::Map(node.0)
+        let mut map = BTreeMap::new();
+        let mut objects = BTreeMap::new();
+
+        // Add all links directly to the root map, and include objects if present
+        for (name, link) in node.links {
+            map.insert(name.clone(), link.clone().into());
+            if let NodeLink::Data(_, Some(object)) = link {
+                objects.insert(name, object.clone().into());
+            }
+        }
+
+        // Add schema under .schema if present
+        if let Some(schema) = node.schema {
+            map.insert(NODE_SCHEMA_KEY.to_string(), schema.into());
+        }
+
+        // Add objects under .obj
+        map.insert(NODE_OBJECT_KEY.to_string(), Ipld::Map(objects));
+
+        Ipld::Map(map)
     }
 }
 
 impl TryFrom<Ipld> for Node {
-    type Error = &'static str;
+    type Error = NodeError;
+
     fn try_from(ipld: Ipld) -> Result<Self, Self::Error> {
-        match ipld {
-            Ipld::Map(node) => Ok(Self(node)),
-            _ => Err("not a node"),
+        let mut map = match ipld {
+            Ipld::Map(m) => m,
+            _ => return Err(NodeError::NotAMap("ipld".to_string())),
+        };
+
+        let mut links = BTreeMap::new();
+        let mut objects = BTreeMap::new();
+        let mut schema = None;
+
+        // process the .obj key
+        if let Some(object_map) = map.remove(NODE_OBJECT_KEY) {
+            if let Ipld::Map(object_map) = object_map {
+                for (name, obj_ipld) in object_map {
+                    let object = Object::try_from(obj_ipld)?;
+                    objects.insert(name, object);
+                }
+            } else {
+                return Err(NodeError::NotAMap(NODE_OBJECT_KEY.to_string()));
+            }
         }
+
+        // process the .schema key
+        if let Some(schema_ipld) = map.remove(NODE_SCHEMA_KEY) {
+            schema = Some(Schema::try_from(schema_ipld)?);
+        }
+
+        // Process each entry in the map
+        for (key, value) in map {
+            if let Ipld::Link(cid) = value {
+                // objects are just privileged data links
+                match objects.remove(&key) {
+                    // TODO: should probably sanity check that the codec is raw
+                    Some(object) => links.insert(key, NodeLink::Data(cid, Some(object.clone()))),
+                    // match on what codec is used
+                    None => match IpldCodec::try_from(cid.codec()).unwrap() {
+                        // this is just data without an object
+                        IpldCodec::Raw | IpldCodec::DagPb => {
+                            links.insert(key, NodeLink::Data(cid, None))
+                        }
+
+                        _ => links.insert(key, NodeLink::Node(cid)),
+                    },
+                };
+            }
+            // just skip non-link entries
+        }
+
+        // NOTE: objects won't be included in the node if the link is deleted
+        //  we can maybe see this as just a special case which also implicitly
+        //  deletes the object if the link is destroyed
+        // I think that's fine for now
+
+        Ok(Self { links, schema })
     }
 }
 
-impl Deref for Node {
-    type Target = BTreeMap<String, Ipld>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum NodeError {
+    #[error("block encoding failed")]
+    BlockEncoding,
+    #[error("file is not a map")]
+    NotAMap(String),
+    #[error("invalid object")]
+    Object(#[from] ObjectError),
+    #[error("invalid schema")]
+    Schema(#[from] SchemaError),
+    #[error("link uses reserved name: {0}")]
+    ReservedName(String),
+    #[error("link not found")]
+    LinkNotFound(String),
 }
 
 impl Node {
-    // Write a link to the node. Use this for creating 'directories'
-    pub fn put_link(&mut self, name: &str, link: &Cid) {
-        assert_ne!(name, METADATA_KEY);
-        self.0.insert(name.to_string(), Ipld::Link(*link));
+    // Schema methods
+    pub fn schema(&self) -> Option<&Schema> {
+        self.schema.as_ref()
     }
 
-    pub fn put_object(
-        &mut self,
-        name: &str,
-        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-        maybe_backdate: Option<chrono::NaiveDate>,
-    ) {
-        assert_ne!(name, METADATA_KEY);
-        let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
-        let mut metadata_map = match metadata_ipld {
-            Ipld::Map(metadata) => metadata,
-            _ => panic!("not a map"),
-        };
-        let object: Object = match metadata_map.get(name) {
-            Some(object_ipld) => {
-                let mut object = Object::try_from(object_ipld.clone()).unwrap();
-                object.update(maybe_metadata, maybe_backdate);
-                object
-            }
-            _ => Object::new(maybe_metadata),
-        };
-        metadata_map.insert(name.to_string(), object.into());
-        self.0
-            .insert(METADATA_KEY.to_string(), Ipld::Map(metadata_map.clone()));
+    pub fn unset_schema(&mut self) {
+        self.schema = None;
     }
 
-    // Write a link to the node as an object. Use this for creating 'files'
-    pub fn update_link(
-        &mut self,
-        name: &str,
-        maybe_link: Option<&Cid>,
-        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-        maybe_backdate: Option<chrono::NaiveDate>,
-    ) {
-        assert_ne!(name, METADATA_KEY);
+    pub fn set_schema(&mut self, schema: Schema) {
+        self.schema = Some(schema);
+    }
 
-        if let Some(link) = maybe_link {
-            self.put_link(name, link);
+    pub fn clear_schema(&mut self) {
+        self.schema = None;
+    }
+
+    pub fn cid(&self) -> Cid {
+        let ipld: Ipld = self.clone().into();
+        let block = Block::<DefaultParams>::encode(DEFAULT_IPLD_CODEC, DEFAULT_HASH_CODE, &ipld)
+            .map_err(|_| NodeError::BlockEncoding)
+            .unwrap();
+        *block.cid()
+    }
+
+    // put a link into the node
+    pub fn put_link(&mut self, name: &str, cid: Cid) -> Result<(), NodeError> {
+        // restrict reserved names -- don't allow anything named .schema or .obj
+        if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
+            return Err(NodeError::ReservedName(name.to_string()));
         }
-        self.put_object(name, maybe_metadata, maybe_backdate)
+        match IpldCodec::try_from(cid.codec()).unwrap() {
+            IpldCodec::DagCbor => {
+                self.links.insert(name.to_string(), NodeLink::Node(cid));
+            }
+            _ => {
+                self.links
+                    .insert(name.to_string(), NodeLink::Data(cid, None));
+            }
+        };
+        Ok(())
     }
 
-    // Remove a link from the node. Should return the CID of the link, as well as the fully
-    // constructed object that was attached to the link if it exists (in the case of a file).
-    pub fn del(&mut self, name: &str) -> (Option<Cid>, Option<Object>) {
-        let metadata_ipld = self.0.get(METADATA_KEY).unwrap().clone();
-        let mut metadata_map = match metadata_ipld {
-            Ipld::Map(metadata) => metadata,
-            _ => panic!("not a map"),
-        };
-        // Match on whether the link is present in the node
-        let link = match self.0.remove(name) {
-            Some(Ipld::Link(cid)) => Ipld::Link(cid),
-            None => return (Some(Cid::default()), None),
-            _ => panic!("not a link"),
-        };
-        let object = metadata_map.remove(name);
-        self.0
-            .insert(METADATA_KEY.to_string(), Ipld::Map(metadata_map.clone()));
-        match (link, object) {
-            (Ipld::Link(cid), Some(Ipld::Map(metadata))) => {
-                let object = Object::try_from(Ipld::Map(metadata)).unwrap();
-                (Some(cid), Some(object))
+    pub fn get_link(&self, name: &str) -> Option<&NodeLink> {
+        self.links.get(name)
+    }
+
+    pub fn get_links(&self) -> &BTreeMap<String, NodeLink> {
+        &self.links
+    }
+
+    // Object/object methods
+    pub fn put_object(&mut self, name: &str, object: &Object) -> Result<(), NodeError> {
+        if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
+            return Err(NodeError::ReservedName(name.to_string()));
+        }
+        let maybe_schema = self.schema();
+
+        // get the link
+        let mut object = object.clone();
+
+        if let Some(NodeLink::Data(cid, maybe_object)) = self.links.get(name) {
+            // if there's an object here already, we'll inhereit creation date
+            if let Some(obj) = maybe_object {
+                object.set_created_at(*obj.created_at());
             }
-            (Ipld::Link(cid), None) => (Some(cid), None),
-            _ => panic!("not a link and metadata"),
+            // validate the object against the schema
+            match maybe_schema {
+                Some(schema) => {
+                    schema.validate(&object)?;
+                }
+                None => {
+                    if let Some(schema) = self.schema() {
+                        schema.validate(&object)?;
+                    }
+                }
+            };
+            // and we'll overwrite the object in the link
+            self.links
+                .insert(name.to_string(), NodeLink::Data(*cid, Some(object)));
+        } else {
+            return Err(NodeError::LinkNotFound(name.to_string()));
+        }
+
+        Ok(())
+    }
+
+    pub fn rm_object(&mut self, name: &str) -> Result<(), NodeError> {
+        let link = self.get_link(name);
+        if let Some(NodeLink::Data(cid, _)) = link {
+            self.links
+                .insert(name.to_string(), NodeLink::Data(*cid, None));
+            Ok(())
+        } else {
+            Err(NodeError::LinkNotFound(name.to_string()))
         }
     }
 
-    // Just get the link from the node, without any metadata
-    pub fn get_link(&self, name: &str) -> Option<Cid> {
-        assert_ne!(name, METADATA_KEY);
-        self.0.get(name).and_then(|ipld| match ipld {
-            Ipld::Link(cid) => Some(*cid),
-            _ => None,
-        })
-    }
-
-    pub fn get_links(&self) -> BTreeMap<String, Cid> {
-        let mut m = BTreeMap::new();
-        for (k, v) in self.0.iter() {
-            if k == METADATA_KEY {
-                continue;
-            }
-            if let Ipld::Link(cid) = v {
-                m.insert(k.clone(), *cid);
-            }
-        }
-        m
+    pub fn del(&mut self, name: &str) -> Option<NodeLink> {
+        // check if the link is an object
+        self.links.remove(name)
     }
 
     pub fn size(&self) -> usize {
-        // Get the length of the node, minus the metadata key
-        self.0.len() - 1
+        self.links.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{SchemaProperty, SchemaType, RAW_IPLD_CODEC};
+
+    fn test_cid() -> Cid {
+        *Block::<DefaultParams>::encode(
+            RAW_IPLD_CODEC,
+            DEFAULT_HASH_CODE,
+            &Ipld::Bytes("test".as_bytes().to_vec()),
+        )
+        .unwrap()
+        .cid()
     }
 
-    // Get the fully constructed object from the node, if it exists
-    pub fn get_object(&self, name: &str) -> Option<Object> {
-        let metadata_ipld = self.0.get(METADATA_KEY).unwrap();
-        let metadata_map = match metadata_ipld {
-            Ipld::Map(metadata) => metadata,
-            _ => panic!("not a map"),
-        };
-        metadata_map
-            .get(name)
-            .map(|object_ipld| Object::try_from(object_ipld.clone()).unwrap())
+    #[tokio::test]
+    async fn test_schema_valid() {
+        let mut node = Node::default();
+
+        // Set up a schema
+        let mut schema = Schema::default();
+        schema.insert(
+            "title".to_string(),
+            SchemaProperty {
+                property_type: SchemaType::String,
+                description: None,
+                required: true,
+            },
+        );
+
+        node.set_schema(schema);
+
+        // Test valid object
+        let test_cid = test_cid();
+
+        node.put_link("test.txt", test_cid).unwrap();
+        let mut valid_object = Object::default();
+        valid_object.insert("title".to_string(), Ipld::String("Test".to_string()));
+        assert!(node.put_object("test.txt", &valid_object).is_ok());
     }
 
-    // Get all the metadata objects from the node
-    pub fn get_objects(&self) -> BTreeMap<String, Object> {
-        let metadata_ipld = self.0.get(METADATA_KEY).unwrap();
-        let metadata_map = match metadata_ipld {
-            Ipld::Map(metadata) => metadata,
-            _ => panic!("not a map"),
-        };
-        let mut m = BTreeMap::new();
-        for (k, v) in metadata_map.iter() {
-            let object = Object::try_from(v.clone()).unwrap();
-            m.insert(k.clone(), object);
-        }
-        m
+    #[tokio::test]
+    async fn test_schema_invalid() {
+        let mut node = Node::default();
+
+        // Set up a schema
+        let mut schema = Schema::default();
+        schema.insert(
+            "title".to_string(),
+            SchemaProperty {
+                property_type: SchemaType::String,
+                description: None,
+                required: true,
+            },
+        );
+
+        node.set_schema(schema);
+
+        // Test valid object
+        let test_cid = test_cid();
+
+        node.put_link("test.txt", test_cid).unwrap();
+        let mut invalid_object = Object::default();
+        invalid_object.insert("_title".to_string(), Ipld::String("Test".to_string()));
+        assert!(node.put_object("test.txt", &invalid_object).is_err());
+        let mut invalid_object = Object::default();
+        invalid_object.insert("title".to_string(), Ipld::Integer(1));
+        assert!(node.put_object("test.txt", &invalid_object).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ipld_serialization() {
+        let mut node = Node::default();
+        // Add some test data
+        let mut object = Object::default();
+        let test_cid = test_cid();
+        node.put_link("test.txt", test_cid).unwrap();
+
+        object.insert("title".to_string(), Ipld::String("Test".to_string()));
+        node.put_object("test.txt", &object).unwrap();
+
+        // Convert to IPLD and back
+        let ipld: Ipld = node.clone().into();
+        let decoded = Node::try_from(ipld).unwrap();
+
+        assert_eq!(node, decoded);
     }
 }

@@ -5,11 +5,9 @@ use std::path::PathBuf;
 
 use super::ops::Add as AddOp;
 use super::ops::Init as InitOp;
-use super::ops::Key as KeyOp;
 use super::ops::Pull as PullOp;
 use super::ops::Push as PushOp;
 use super::ops::Stat as StatOp;
-use super::ops::Tag as TagOp;
 use super::AppState;
 
 pub use clap::Parser;
@@ -83,9 +81,6 @@ command_enum! {
     (Pull, PullOp),
     (Push, PushOp),
     (Stat, StatOp),
-    (Key, KeyOp),
-    (Tag, TagOp),
-    // Define more commands here
 }
 
 impl fmt::Display for OpOutput {
@@ -100,12 +95,10 @@ impl fmt::Display for OpOutput {
                 cid,
                 path.display()
             ),
-            OpOutput::Add(cid) => write!(f, "{}", cid),
-            OpOutput::Pull(cid) => write!(f, "{}", cid),
-            OpOutput::Push(cid) => write!(f, "{}", cid),
-            OpOutput::Stat(cid) => write!(f, "{}", cid), // Define more outputs here
-            OpOutput::Key(string) => write!(f, "{}", string),
-            OpOutput::Tag(cid) => write!(f, "{}", cid),
+            OpOutput::Add(o) => write!(f, "{}", o),
+            OpOutput::Pull(o) => write!(f, "{}", o),
+            OpOutput::Push(o) => write!(f, "{}", o),
+            OpOutput::Stat(o) => write!(f, "{}", o),
         }
     }
 }

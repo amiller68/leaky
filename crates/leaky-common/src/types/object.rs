@@ -1,111 +1,69 @@
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
 
-use chrono::Datelike;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::Ipld;
 
+pub const OBJECT_CREATED_AT_KEY: &str = "created_at";
+pub const OBJECT_UPDATED_AT_KEY: &str = "updated_at";
+// NOTE: we keep things nested under metadata to keep
+//  things backwards compatible -- otherwise we end up changing
+//  the cid when we serialize back to ipld
+pub const LEGACY_PROPERTIES_KEY: &str = "metadata";
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Object {
+    // if not set when deserializing, set to current time
+    #[serde(default = "OffsetDateTime::now_utc")]
     created_at: OffsetDateTime,
+    #[serde(default = "OffsetDateTime::now_utc")]
     updated_at: OffsetDateTime,
-    metadata: BTreeMap<String, Ipld>,
+    properties: BTreeMap<String, Ipld>,
 }
 
 impl Default for Object {
     fn default() -> Self {
-        Object {
+        Self {
             created_at: OffsetDateTime::now_utc(),
             updated_at: OffsetDateTime::now_utc(),
-            metadata: BTreeMap::new(),
+            properties: BTreeMap::new(),
         }
     }
 }
 
-const OBJECT_CREATED_AT_LABEL: &str = "created_at";
-const OBJECT_UPDATED_AT_LABEL: &str = "updated_at";
-const OBJECT_METADATA_LABEL: &str = "metadata";
-
-impl From<Object> for Ipld {
-    fn from(object: Object) -> Self {
-        let mut map = BTreeMap::new();
-        map.insert(
-            OBJECT_CREATED_AT_LABEL.to_string(),
-            Ipld::Integer(object.created_at().unix_timestamp_nanos()),
-        );
-        map.insert(
-            OBJECT_UPDATED_AT_LABEL.to_string(),
-            Ipld::Integer(object.updated_at().unix_timestamp_nanos()),
-        );
-        map.insert(
-            OBJECT_METADATA_LABEL.to_string(),
-            Ipld::Map(object.metadata().clone()),
-        );
-        Ipld::Map(map)
-    }
-}
-
-impl TryFrom<Ipld> for Object {
-    type Error = ObjectIpldError;
-    fn try_from(ipld: Ipld) -> Result<Self, ObjectIpldError> {
-        let map = match ipld {
-            Ipld::Map(map) => map,
-            _ => return Err(ObjectIpldError::NotMap),
-        };
-
-        let created_at_int = match map.get(OBJECT_CREATED_AT_LABEL) {
-            Some(Ipld::Integer(created_at)) => *created_at,
-            _ => {
-                return Err(ObjectIpldError::MissingMapMember(
-                    OBJECT_CREATED_AT_LABEL.to_string(),
-                ))
-            }
-        };
-        let created_at = OffsetDateTime::from_unix_timestamp_nanos(created_at_int)?;
-
-        let updated_at_int = match map.get(OBJECT_UPDATED_AT_LABEL) {
-            Some(Ipld::Integer(updated_at)) => *updated_at,
-            _ => {
-                return Err(ObjectIpldError::MissingMapMember(
-                    OBJECT_UPDATED_AT_LABEL.to_string(),
-                ))
-            }
-        };
-        let updated_at = OffsetDateTime::from_unix_timestamp_nanos(updated_at_int)?;
-
-        let metadata = match map.get(OBJECT_METADATA_LABEL) {
-            Some(Ipld::Map(metadata)) => metadata.clone(),
-            _ => {
-                return Err(ObjectIpldError::MissingMapMember(
-                    OBJECT_METADATA_LABEL.to_string(),
-                ))
-            }
-        };
-
-        Ok(Self {
-            created_at,
-            updated_at,
-            metadata,
-        })
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum ObjectError {
+    #[error("not a map")]
+    NotAMap,
+    #[error("missing field: {0}")]
+    MissingField(String),
+    #[error("invalid datetime: {0}")]
+    InvalidDateTime(#[from] time::error::ComponentRange),
+    #[error("schema validation failed: {0}")]
+    SchemaValidation(#[from] super::schema::SchemaError),
+    #[error("no schema available")]
+    NoSchema,
 }
 
 impl Object {
-    pub fn new(maybe_metadata: Option<&BTreeMap<String, Ipld>>) -> Self {
-        let metadata = match maybe_metadata {
-            Some(metadata) => metadata.clone(),
-            None => BTreeMap::new(),
+    /// Create a new object, validating properties against the provided schema
+    pub fn new(properties: Option<&BTreeMap<String, Ipld>>) -> Result<Self, ObjectError> {
+        let properties = properties.cloned().unwrap_or_default();
+        let now = OffsetDateTime::now_utc();
+        let obj = Self {
+            created_at: now,
+            updated_at: now,
+            properties,
         };
-        Object {
-            created_at: OffsetDateTime::now_utc(),
-            updated_at: OffsetDateTime::now_utc(),
-            metadata,
-        }
+
+        Ok(obj)
     }
 
-    /* Getters */
+    pub fn set_created_at(&mut self, created_at: OffsetDateTime) {
+        self.created_at = created_at;
+    }
 
     pub fn created_at(&self) -> &OffsetDateTime {
         &self.created_at
@@ -115,46 +73,79 @@ impl Object {
         &self.updated_at
     }
 
-    pub fn metadata(&self) -> &BTreeMap<String, Ipld> {
-        &self.metadata
+    pub fn properties(&self) -> &BTreeMap<String, Ipld> {
+        &self.properties
     }
 
-    /* Updaters */
-
-    /// Update the data, metadata or both
-    pub fn update(
-        &mut self,
-        maybe_metadata: Option<&BTreeMap<String, Ipld>>,
-        maybe_backdate: Option<chrono::NaiveDate>,
-    ) {
-        if let Some(naive_date) = maybe_backdate {
-            let time_date = time::Date::from_calendar_date(
-                naive_date.year(),
-                time::Month::try_from(naive_date.month() as u8).unwrap(),
-                naive_date.day() as u8,
-            )
-            .unwrap();
-
-            // Create a time::OffsetDateTime from the date, assuming midnight UTC
-            let offset_dt = time_date.with_hms(0, 0, 0).unwrap().assume_utc();
-
-            self.created_at = offset_dt;
-        }
-        self.updated_at = OffsetDateTime::now_utc();
-        if let Some(metadata) = maybe_metadata {
-            self.metadata = metadata.clone();
-        }
+    pub fn insert(&mut self, key: String, value: Ipld) {
+        self.properties.insert(key, value);
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ObjectIpldError {
-    #[error("invalid datetime: {0}")]
-    InvalidDateTime(#[from] time::error::ComponentRange),
-    #[error("missing map member: {0}")]
-    MissingMapMember(String),
-    #[error("serde json error: {0}")]
-    SerdeJson(#[from] serde_json::Error),
-    #[error("ipld data is not map")]
-    NotMap,
+// IPLD serialization implementations remain unchanged
+impl From<Object> for Ipld {
+    fn from(object: Object) -> Self {
+        let mut map = BTreeMap::new();
+
+        map.insert(
+            OBJECT_CREATED_AT_KEY.to_string(),
+            Ipld::Integer(object.created_at.unix_timestamp_nanos()),
+        );
+        map.insert(
+            OBJECT_UPDATED_AT_KEY.to_string(),
+            Ipld::Integer(object.updated_at.unix_timestamp_nanos()),
+        );
+
+        map.insert(
+            LEGACY_PROPERTIES_KEY.to_string(),
+            Ipld::Map(object.properties),
+        );
+
+        Ipld::Map(map)
+    }
+}
+
+impl TryFrom<Ipld> for Object {
+    type Error = ObjectError;
+
+    fn try_from(ipld: Ipld) -> Result<Self, Self::Error> {
+        let mut map = match ipld {
+            Ipld::Map(m) => m,
+            _ => return Err(ObjectError::NotAMap),
+        };
+
+        let created_at = match map.remove(OBJECT_CREATED_AT_KEY) {
+            Some(Ipld::Integer(ts)) => OffsetDateTime::from_unix_timestamp_nanos(ts)?,
+            _ => return Err(ObjectError::MissingField(OBJECT_CREATED_AT_KEY.to_string())),
+        };
+
+        let updated_at = match map.remove(OBJECT_UPDATED_AT_KEY) {
+            Some(Ipld::Integer(ts)) => OffsetDateTime::from_unix_timestamp_nanos(ts)?,
+            _ => return Err(ObjectError::MissingField(OBJECT_UPDATED_AT_KEY.to_string())),
+        };
+
+        // properties is just everything under the legacy properties key, or
+        //  a new map of properties
+        let mut properties = BTreeMap::new();
+        if let Some(Ipld::Map(metadata)) = map.remove(LEGACY_PROPERTIES_KEY) {
+            properties = metadata;
+        }
+
+        Ok(Self {
+            created_at,
+            updated_at,
+            properties,
+        })
+    }
+}
+
+impl From<BTreeMap<String, Ipld>> for Object {
+    fn from(properties: BTreeMap<String, Ipld>) -> Self {
+        let now = OffsetDateTime::now_utc();
+        Self {
+            created_at: now,
+            updated_at: now,
+            properties,
+        }
+    }
 }

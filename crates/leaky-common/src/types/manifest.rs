@@ -5,6 +5,10 @@ use serde::{Deserialize, Serialize};
 use super::version::Version;
 use super::{Cid, Ipld};
 
+const VERSION_KEY: &str = "version";
+const PREVIOUS_KEY: &str = "previous";
+const DATA_KEY: &str = "data";
+
 /// Manifest
 #[derive(Default, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct Manifest {
@@ -19,9 +23,9 @@ pub struct Manifest {
 impl From<Manifest> for Ipld {
     fn from(manifest: Manifest) -> Self {
         let mut map = std::collections::BTreeMap::new();
-        map.insert("version".to_string(), manifest.version.into());
-        map.insert("previous".to_string(), Ipld::Link(manifest.previous));
-        map.insert("data".to_string(), Ipld::Link(manifest.data));
+        map.insert(VERSION_KEY.to_string(), manifest.version.into());
+        map.insert(PREVIOUS_KEY.to_string(), Ipld::Link(manifest.previous));
+        map.insert(DATA_KEY.to_string(), Ipld::Link(manifest.data));
         Ipld::Map(map)
     }
 }
@@ -31,17 +35,17 @@ impl TryFrom<Ipld> for Manifest {
     fn try_from(ipld: Ipld) -> Result<Self, ManifestError> {
         match ipld {
             Ipld::Map(map) => {
-                let version = match map.get("version") {
+                let version = match map.get(VERSION_KEY) {
                     Some(ipld) => Version::try_from(ipld.clone())?,
-                    None => return Err(ManifestError::MissingField("version".to_string())),
+                    None => return Err(ManifestError::MissingField(VERSION_KEY.to_string())),
                 };
-                let previous = match map.get("previous") {
+                let previous = match map.get(PREVIOUS_KEY) {
                     Some(Ipld::Link(cid)) => *cid,
-                    _ => return Err(ManifestError::MissingField("previous link".to_string())),
+                    _ => return Err(ManifestError::MissingField(PREVIOUS_KEY.to_string())),
                 };
-                let data = match map.get("data") {
+                let data = match map.get(DATA_KEY) {
                     Some(Ipld::Link(cid)) => *cid,
-                    _ => return Err(ManifestError::MissingField("data link".to_string())),
+                    _ => return Err(ManifestError::MissingField(DATA_KEY.to_string())),
                 };
 
                 Ok(Manifest {

@@ -25,7 +25,10 @@ services:
       - app_network
     # Add this back for Windows/Mac compatibility
     extra_hosts:
+      # for linux
       - "host.docker.internal:172.17.0.1"
+      # for mac
+      # - "host.docker.internal:host-gateway"
 
 networks:
   app_network:
@@ -33,4 +36,3 @@ networks:
 
 volumes:
   ipfs_data:
-

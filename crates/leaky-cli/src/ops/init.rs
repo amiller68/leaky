@@ -54,15 +54,9 @@ impl Op for Init {
         }
         let mut client = state.client()?;
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
+        let cid = client.call(PullRoot).await?;
 
-        let mut mount = Mount::init(&ipfs_rpc.clone()).await?;
-        mount.push().await?;
-
-        let previous_cid = Cid::default().to_string();
-        let cid = mount.cid().to_string();
-
-        let push_root = PushRoot { cid, previous_cid };
-        client.call(push_root).await?;
+        let mount = Mount::pull(cid.cid(), &ipfs_rpc.clone()).await?;
 
         state.save(&mount, None, Some(*mount.cid()))?;
 
