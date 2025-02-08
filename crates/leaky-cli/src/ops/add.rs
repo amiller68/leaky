@@ -138,7 +138,7 @@ impl Op for Add {
         let mut change_log = state.change_log().clone();
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
         let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
-        let updates = diff(&mut change_log).await?;
+        let mut updates = diff(&mut change_log).await?;
         let updates_clone = updates.clone();
         let change_log_iter = updates_clone.iter().map(|(path, (hash, change))| {
             let abs_path = abs_path(path).unwrap();
