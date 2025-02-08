@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 
@@ -39,6 +40,9 @@ pub enum PullError {
     PathIsDirectory(PathBuf),
 }
 
+// TODO: known error that a file not being updated will not trigger a pull
+//  of it's metadata
+
 #[async_trait]
 impl Op for Pull {
     type Error = PullError;
@@ -53,9 +57,7 @@ impl Op for Pull {
         let local_ipfs_rpc = IpfsRpc::default();
         let mount = Mount::pull(cid, &ipfs_rpc).await?;
 
-        let (ls, schemas) = mount
-            .ls_deep(&PathBuf::from("/"))
-            .await?;
+        let (ls, schemas) = mount.ls_deep(&PathBuf::from("/")).await?;
 
         let pulled_items = ls
             .iter()
@@ -63,12 +65,23 @@ impl Op for Pull {
             .collect::<Vec<_>>();
         let pulled_schemas = schemas
             .iter()
-            .map(|(path, schema)| (path.strip_prefix("/").unwrap().to_path_buf(), schema.clone()))
+            .map(|(path, schema)| {
+                (
+                    path.strip_prefix("/").unwrap().to_path_buf(),
+                    schema.clone(),
+                )
+            })
             .collect::<Vec<_>>();
         // Insert everything in the change log
         let mut change_log = ChangeLog::new();
+
+        // set base items for all pulled items
         for (path, link) in pulled_items.iter() {
-            change_log.insert(path.clone(), (*link.cid(), ChangeType::Base));
+            // set these to None because we don't know when they were last checked yet
+            change_log.insert(
+                path.clone(),
+                (*link.cid(), ChangeType::Base { last_check: None }),
+            );
         }
 
         // Handle regular files and their objects together
@@ -90,20 +103,22 @@ impl Op for Pull {
             match (pi_next, ci_next.clone()) {
                 (Some((pi_path, pi_link)), Some((ci_tree, ci_path))) => {
                     // Skip .obj directories and schema files
-                    if ci_tree.is_dir() || 
-                       ci_path.to_str().map_or(false, |p| p.contains("/.obj/")) ||
-                       ci_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                    if ci_tree.is_dir()
+                        || ci_path.to_str().map_or(false, |p| p.contains("/.obj/"))
+                        || ci_path.to_str().map_or(false, |p| p.ends_with(".schema"))
+                    {
                         ci_next = ci_iter.next();
                         continue;
                     }
 
-                    let normalized_ci_path = if ci_path.to_str().map_or(false, |p| p.ends_with(".json")) {
-                        // Skip object files in comparison
-                        ci_next = ci_iter.next();
-                        continue
-                    } else {
-                        ci_path.clone()
-                    };
+                    let normalized_ci_path =
+                        if ci_path.to_str().map_or(false, |p| p.ends_with(".json")) {
+                            // Skip object files in comparison
+                            ci_next = ci_iter.next();
+                            continue;
+                        } else {
+                            ci_path.clone()
+                        };
 
                     // Skip schema files in pulled items comparison
                     if pi_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
@@ -117,7 +132,8 @@ impl Op for Pull {
                     } else if pi_path > &normalized_ci_path {
                         to_prune.push(normalized_ci_path);
                         ci_next = ci_iter.next();
-                    } else if file_needs_pull(&local_ipfs_rpc, &normalized_ci_path, pi_link.cid()).await?
+                    } else if file_needs_pull(&local_ipfs_rpc, &normalized_ci_path, pi_link.cid())
+                        .await?
                         && *pi_link.cid() != Cid::default()
                     {
                         to_pull.push((pi_path, pi_link.cid()));
@@ -139,8 +155,9 @@ impl Op for Pull {
                 }
                 (None, Some((_, ci_path))) => {
                     // Don't prune .obj directories or schema files
-                    if !ci_path.to_str().map_or(false, |p| p.contains("/.obj/")) &&
-                       !ci_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                    if !ci_path.to_str().map_or(false, |p| p.contains("/.obj/"))
+                        && !ci_path.to_str().map_or(false, |p| p.ends_with(".schema"))
+                    {
                         to_prune.push(ci_path);
                     }
                     ci_next = ci_iter.next();
@@ -150,22 +167,44 @@ impl Op for Pull {
         }
 
         // Handle regular files and their objects
-        for (path, _) in to_pull {
+        for (path, link) in to_pull {
             pull_file(&mount, path).await?;
-            
+            // now that it's on disk, set the last_check to Some(SystemTime::now())
+            change_log.insert(
+                path.clone(),
+                (
+                    *link,
+                    ChangeType::Base {
+                        last_check: Some(SystemTime::now()),
+                    },
+                ),
+            );
+
             // Write object file if it exists
             let matching_item = pulled_items.iter().find(|(p, _)| p == path);
-            
+
             if let Some((_, link)) = matching_item {
                 if let NodeLink::Data(_, Some(object)) = link {
                     let obj_dir = path.parent().unwrap().join(".obj");
                     std::fs::create_dir_all(&obj_dir)?;
-                    
+
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let obj_path = obj_dir.join(format!(".{}.json", file_name));
-                    
+
                     let obj_str = serde_json::to_string_pretty(&object)?;
                     std::fs::write(&obj_path, obj_str)?;
+
+                    // write the object file into the change log
+                    let cid = utils::hash_file(&obj_path, &local_ipfs_rpc, None).await?;
+                    change_log.insert(
+                        obj_path.clone(),
+                        (
+                            cid,
+                            ChangeType::Base {
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
                 }
             }
         }
@@ -180,6 +219,18 @@ impl Op for Pull {
             let schema_str = serde_json::to_string_pretty(&schema)?;
             std::fs::create_dir_all(&path)?;
             std::fs::write(&schema_path, schema_str)?;
+
+            // write the schema file into the change log
+            let cid = utils::hash_file(&schema_path, &local_ipfs_rpc, None).await?;
+            change_log.insert(
+                schema_path.clone(),
+                (
+                    cid,
+                    ChangeType::Base {
+                        last_check: Some(SystemTime::now()),
+                    },
+                ),
+            );
         }
 
         let cid = *mount.cid();
@@ -199,7 +250,7 @@ pub async fn file_needs_pull(
         return Err(PullError::PathIsDirectory(path.clone()));
     }
 
-    let hash = utils::hash_file(path, ipfs_rpc).await?;
+    let hash = utils::hash_file(path, ipfs_rpc, None).await?;
     if hash == *cid {
         Ok(false)
     } else {

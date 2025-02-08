@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use anyhow::Result;
 use leaky_common::prelude::*;
@@ -24,7 +25,11 @@ pub fn fs_tree() -> Result<FsTree> {
     }
 }
 
-pub async fn hash_file(path: &PathBuf, ipfs: &IpfsRpc) -> Result<Cid> {
+pub async fn hash_file(
+    path: &PathBuf,
+    ipfs: &IpfsRpc,
+    cached: Option<(&Cid, Option<SystemTime>)>,
+) -> Result<Cid> {
     if !path.exists() {
         return Err(anyhow::anyhow!("File does not exist"));
     }
@@ -32,8 +37,20 @@ pub async fn hash_file(path: &PathBuf, ipfs: &IpfsRpc) -> Result<Cid> {
         return Err(anyhow::anyhow!("Expected a file"));
     }
 
-    let file = std::fs::File::open(path)?;
+    // Get file metadata to check modification time
+    let metadata = std::fs::metadata(path)?;
+    let modified = metadata.modified()?;
 
+    // If we have a previous hash and timestamp, and the file hasn't been modified since,
+    // return the previous hash
+    if let Some((prev_hash, Some(last_check))) = cached {
+        if modified <= last_check {
+            return Ok(*prev_hash);
+        }
+    }
+
+    // Otherwise hash the file
+    let file = std::fs::File::open(path)?;
     let cid = ipfs.hash_data(file).await?;
 
     Ok(cid)

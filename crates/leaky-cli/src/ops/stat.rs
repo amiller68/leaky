@@ -6,7 +6,10 @@ use crate::change_log::{ChangeLog, ChangeType};
 use crate::{AppState, Op};
 
 #[derive(Debug, clap::Args, Clone)]
-pub struct Stat;
+pub struct Stat {
+    #[clap(short, long)]
+    pub verbose: bool,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum StatError {
@@ -19,6 +22,7 @@ pub enum StatError {
 #[derive(Debug)]
 pub struct StatOutput {
     pub change_log: ChangeLog,
+    pub verbose: bool,
 }
 
 impl Display for StatOutput {
@@ -26,11 +30,7 @@ impl Display for StatOutput {
         let mut s = String::new();
         let mut changes = false;
         for (path, (_hash, diff_type)) in self.change_log.iter() {
-            if diff_type == &ChangeType::Base {
-                continue;
-            }
-            // skip if the path contains .obj or .schema
-            if path.to_str().unwrap().contains(".obj") || path.to_str().unwrap().contains(".schema") {
+            if !self.verbose && matches!(diff_type, ChangeType::Base { .. }) {
                 continue;
             }
             changes = true;
@@ -41,7 +41,7 @@ impl Display for StatOutput {
                 s.push_str(&format!("\n{}: {}", path.to_str().unwrap(), diff_type));
             }
         }
-        if !changes {
+        if !changes && !self.verbose {
             s.push_str("No changes");
         }
         write!(f, "{}", s)
@@ -56,6 +56,7 @@ impl Op for Stat {
     async fn execute(&self, state: &AppState) -> Result<Self::Output, Self::Error> {
         Ok(StatOutput {
             change_log: state.change_log().clone(),
+            verbose: self.verbose,
         })
     }
 }

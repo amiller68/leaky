@@ -159,6 +159,10 @@ impl Node {
         self.schema.as_ref()
     }
 
+    pub fn unset_schema(&mut self) {
+        self.schema = None;
+    }
+
     pub fn set_schema(&mut self, schema: Schema) {
         self.schema = Some(schema);
     }
@@ -202,11 +206,7 @@ impl Node {
     }
 
     // Object/object methods
-    pub fn put_object(
-        &mut self,
-        name: &str,
-        object: &Object
-    ) -> Result<(), NodeError> {
+    pub fn put_object(&mut self, name: &str, object: &Object) -> Result<(), NodeError> {
         if name == NODE_SCHEMA_KEY || name == NODE_OBJECT_KEY {
             return Err(NodeError::ReservedName(name.to_string()));
         }
@@ -235,7 +235,6 @@ impl Node {
             self.links
                 .insert(name.to_string(), NodeLink::Data(*cid, Some(object)));
         } else {
-            println!("link not found: {:?}", name);
             return Err(NodeError::LinkNotFound(name.to_string()));
         }
 
@@ -245,7 +244,8 @@ impl Node {
     pub fn rm_object(&mut self, name: &str) -> Result<(), NodeError> {
         let link = self.get_link(name);
         if let Some(NodeLink::Data(cid, _)) = link {
-            self.links.insert(name.to_string(), NodeLink::Data(*cid, None));
+            self.links
+                .insert(name.to_string(), NodeLink::Data(*cid, None));
             Ok(())
         } else {
             Err(NodeError::LinkNotFound(name.to_string()))
@@ -268,7 +268,13 @@ mod tests {
     use crate::types::{SchemaProperty, SchemaType, RAW_IPLD_CODEC};
 
     fn test_cid() -> Cid {
-        *Block::<DefaultParams>::encode(RAW_IPLD_CODEC, DEFAULT_HASH_CODE, &Ipld::Bytes("test".as_bytes().to_vec())).unwrap().cid()
+        *Block::<DefaultParams>::encode(
+            RAW_IPLD_CODEC,
+            DEFAULT_HASH_CODE,
+            &Ipld::Bytes("test".as_bytes().to_vec()),
+        )
+        .unwrap()
+        .cid()
     }
 
     #[tokio::test]
@@ -294,9 +300,7 @@ mod tests {
         node.put_link("test.txt", test_cid).unwrap();
         let mut valid_object = Object::default();
         valid_object.insert("title".to_string(), Ipld::String("Test".to_string()));
-        assert!(node
-            .put_object("test.txt", &valid_object)
-            .is_ok());
+        assert!(node.put_object("test.txt", &valid_object).is_ok());
     }
 
     #[tokio::test]
@@ -322,14 +326,10 @@ mod tests {
         node.put_link("test.txt", test_cid).unwrap();
         let mut invalid_object = Object::default();
         invalid_object.insert("_title".to_string(), Ipld::String("Test".to_string()));
-        assert!(node
-            .put_object("test.txt", &invalid_object)
-            .is_err());
+        assert!(node.put_object("test.txt", &invalid_object).is_err());
         let mut invalid_object = Object::default();
         invalid_object.insert("title".to_string(), Ipld::Integer(1));
-        assert!(node
-            .put_object("test.txt", &invalid_object)
-            .is_err());
+        assert!(node.put_object("test.txt", &invalid_object).is_err());
     }
 
     #[tokio::test]

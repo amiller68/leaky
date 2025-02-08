@@ -303,11 +303,38 @@ impl Mount {
         Ok(())
     }
 
+    /// remove a schema at a given path within the mount
+    ///  Does and should not handle removing object or data from the mount
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - the path to remove the schema at
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - if the schema was removed successfully
+    /// * `Err(MountError)` - if the schema could not be removed
+    pub async fn unset_schema(&mut self, path: &Path) -> Result<(), MountError> {
+        let mut node = self.get_node_at_path(path).await?;
+        node.unset_schema();
+        self.upsert_node_at_path(path, node).await?;
+        Ok(())
+    }
+
     pub async fn tag(&mut self, path: &Path, object: Object) -> Result<(), MountError> {
         let parent_path = path.parent().unwrap();
         let mut node = self.get_node_at_path(parent_path).await?;
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
         node.put_object(&file_name, &object)?;
+        self.upsert_node_at_path(parent_path, node).await?;
+        Ok(())
+    }
+
+    pub async fn rm_tag(&mut self, path: &Path) -> Result<(), MountError> {
+        let parent_path = path.parent().unwrap();
+        let mut node = self.get_node_at_path(parent_path).await?;
+        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+        node.rm_object(&file_name)?;
         self.upsert_node_at_path(parent_path, node).await?;
         Ok(())
     }

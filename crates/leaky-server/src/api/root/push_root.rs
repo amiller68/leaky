@@ -36,7 +36,7 @@ pub async fn handler(
 ) -> Result<impl IntoResponse, PushRootError> {
     let cid = Cid::from_str(&push_root.cid)?;
     let previous_cid = Cid::from_str(&push_root.previous_cid)?;
-    
+
     let db = state.sqlite_database();
     let mut conn = db.begin().await?;
 

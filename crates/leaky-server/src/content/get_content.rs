@@ -35,23 +35,13 @@ pub async fn handler(
         Some(_rc) => {}
         None => return Err(GetContentError::RootNotFound),
     };
-    
+
     let mount_guard = state.mount_guard();
 
-    // print out the root cid
-    // print out the mount gaurd cid
-    println!("mount guard cid: {:?}", mount_guard.cid());
-    // print out the path
-    println!("path: {:?}", path);
-    // try lsing the root
-    let ls_result = mount_guard.ls(&PathBuf::from("/")).await;
-    println!("ls_result: {:?}", ls_result);
-    
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
-    
+
     let ls_result = mount_guard.ls(&path).await;
-    println!("ls_result: {:?}", ls_result);
     match ls_result {
         Ok((ls, _)) => {
             if !ls.is_empty() {
@@ -79,22 +69,28 @@ pub async fn handler(
             if query.html.unwrap_or(false) {
                 let base_path = path.parent().unwrap_or_else(|| Path::new(""));
                 let get_content_url = state.get_content_forwarding_url().join("content").unwrap();
-                
-                let data = mount_guard.cat(&path).await
+
+                let data = mount_guard
+                    .cat(&path)
+                    .await
                     .map_err(|_| GetContentError::NotFound)?;
-                
+
                 let html = markdown_to_html(data, base_path, &get_content_url);
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
             } else {
-                let data = mount_guard.cat(&path).await
+                let data = mount_guard
+                    .cat(&path)
+                    .await
                     .map_err(|_| GetContentError::NotFound)?;
-                    
+
                 Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data).into_response())
             }
         }
         // Images
         "png" | "jpg" | "jpeg" | "gif" => {
-            let data = mount_guard.cat(&path).await
+            let data = mount_guard
+                .cat(&path)
+                .await
                 .map_err(|_| GetContentError::NotFound)?;
             if query.thumbnail.unwrap_or(false) && ext != "gif" {
                 let resized_image = resize_image(&data, ext)?;
@@ -115,7 +111,9 @@ pub async fn handler(
         }
         // All other files
         _ => {
-            let data = mount_guard.cat(&path).await
+            let data = mount_guard
+                .cat(&path)
+                .await
                 .map_err(|_| GetContentError::NotFound)?;
             Ok((
                 http::StatusCode::OK,

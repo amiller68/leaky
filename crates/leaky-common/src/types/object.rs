@@ -96,7 +96,10 @@ impl From<Object> for Ipld {
             Ipld::Integer(object.updated_at.unix_timestamp_nanos()),
         );
 
-        map.insert(LEGACY_PROPERTIES_KEY.to_string(), Ipld::Map(object.properties));
+        map.insert(
+            LEGACY_PROPERTIES_KEY.to_string(),
+            Ipld::Map(object.properties),
+        );
 
         Ipld::Map(map)
     }
@@ -121,7 +124,7 @@ impl TryFrom<Ipld> for Object {
             _ => return Err(ObjectError::MissingField(OBJECT_UPDATED_AT_KEY.to_string())),
         };
 
-        // properties is just everything under the legacy properties key, or 
+        // properties is just everything under the legacy properties key, or
         //  a new map of properties
         let mut properties = BTreeMap::new();
         if let Some(Ipld::Map(metadata)) = map.remove(LEGACY_PROPERTIES_KEY) {

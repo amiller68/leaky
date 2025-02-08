@@ -28,21 +28,13 @@ impl RootCid {
         previous_cid: &Cid,
         conn: &mut DatabaseConnection,
     ) -> Result<RootCid, RootCidError> {
-        tracing::info!("pushing root cid: {} -> {}", previous_cid, cid);
         // Read the current root cid
         let maybe_root_cid = RootCid::pull(conn).await?;
         if let Some(root_cid) = maybe_root_cid {
-            tracing::info!("found root cid update: {:?}", root_cid);
             if root_cid.cid() != *previous_cid {
-                tracing::warn!(
-                    "wrong previous cid: {:?} != {:?}",
-                    root_cid.cid(),
-                    *previous_cid
-                );
                 return Err(RootCidError::InvalidLink(root_cid.cid(), *previous_cid));
             }
         } else if Cid::default() != *previous_cid {
-            tracing::warn!("no root cid found, but previous cid is not default");
             return Err(RootCidError::InvalidLink(Cid::default(), *previous_cid));
         }
 

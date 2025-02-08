@@ -1,8 +1,8 @@
-use std::convert::TryFrom;
-use std::sync::Arc;
-use std::path::{Path, PathBuf};
-use std::collections::BTreeMap;
 use parking_lot::Mutex;
+use std::collections::BTreeMap;
+use std::convert::TryFrom;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use axum::extract::FromRef;
 use url::Url;
@@ -58,8 +58,10 @@ impl AppState {
 
     pub fn mount_guard(&self) -> MountGuard {
         let guard = unsafe {
-            std::mem::transmute::<parking_lot::MutexGuard<'_, Mount>, 
-                                parking_lot::MutexGuard<'static, Mount>>(self.mount.lock())
+            std::mem::transmute::<
+                parking_lot::MutexGuard<'_, Mount>,
+                parking_lot::MutexGuard<'static, Mount>,
+            >(self.mount.lock())
         };
         MountGuard { _lock: guard }
     }
@@ -112,11 +114,17 @@ impl MountGuard {
         self._lock.cid()
     }
 
-    pub async fn ls(&self, path: &Path) -> Result<(BTreeMap<PathBuf, NodeLink>, Option<Schema>), MountError> {
+    pub async fn ls(
+        &self,
+        path: &Path,
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, Option<Schema>), MountError> {
         self._lock.ls(path).await
     }
 
-    pub async fn ls_deep(&self, path: &Path) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
+    pub async fn ls_deep(
+        &self,
+        path: &Path,
+    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         self._lock.ls_deep(path).await
     }
 

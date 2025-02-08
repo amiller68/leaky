@@ -1,7 +1,8 @@
 use std::fmt::Display;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 
@@ -49,68 +50,6 @@ fn abs_path(path: &PathBuf) -> Result<PathBuf, DiffError> {
     Ok(path)
 }
 
-async fn handle_schema_file(
-    mount: &mut Mount,
-    path: &PathBuf,
-    abs_path: &Path,
-) -> Result<(), AddError> {
-    // Read and parse schema file
-    let schema_str = std::fs::read_to_string(path)?;
-    let schema: Schema =
-        serde_json::from_str(&schema_str).map_err(|e| AddError::InvalidSchema(e.to_string()))?;
-
-    // Get the parent directory path for the schema
-    let parent_dir = abs_path
-        .parent()
-        .ok_or_else(|| AddError::Default(anyhow::anyhow!("Schema file has no parent directory")))?;
-
-    // Add schema to the parent directory with persistence flag true
-    mount.set_schema(parent_dir, schema).await?;
-
-    Ok(())
-}
-
-// TODO: handle deleting object metadata
-async fn handle_object_file(
-    mount: &mut Mount,
-    path: &PathBuf,
-    abs_path: &Path,
-) -> Result<(), AddError> {
-    // Read and parse object file
-    let obj_str = std::fs::read_to_string(path)?;
-    let object: Object =
-        serde_json::from_str(&obj_str).map_err(|e| AddError::InvalidSchema(e.to_string()))?;
-    // write back out in case we upserted created_at and updated_at
-    let obj_str = serde_json::to_string_pretty(&object)?;
-    std::fs::write(path, obj_str)?;
-
-    // Get filename and verify format (.name.json)
-    let file_name = path
-        .file_name()
-        .and_then(|f| f.to_str())
-        .and_then(|s| s.strip_suffix(".json"))
-        .and_then(|s| s.strip_prefix("."))
-        .ok_or_else(|| {
-            AddError::Default(anyhow::anyhow!("Object files must be named .name.json"))
-        })?;
-
-    // For path/to/dir/.obj/.name.json, construct path/to/dir/name
-    let target_path = if let Some(obj_dir) = abs_path.parent() {
-        if let Some(parent_dir) = obj_dir.parent() {
-            parent_dir.join(file_name)
-        } else {
-            return Err(AddError::Default(anyhow::anyhow!("Invalid object path")));
-        }
-    } else {
-        return Err(AddError::Default(anyhow::anyhow!("Invalid object path")));
-    };
-
-    // Add object to the target file
-    mount.tag(&target_path, object).await?;
-
-    Ok(())
-}
-
 #[derive(Debug)]
 pub struct AddOutput {
     pub previous_cid: Cid,
@@ -139,81 +78,233 @@ impl Op for Add {
         let ipfs_rpc = Arc::new(client.ipfs_rpc()?);
         let mut mount = Mount::pull(cid, &ipfs_rpc).await?;
         let mut updates = diff(&mut change_log).await?;
-        let updates_clone = updates.clone();
-        let change_log_iter = updates_clone.iter().map(|(path, (hash, change))| {
+        let schema_updates = updates.schema().clone();
+        let schema_change_log_iter = schema_updates.iter().map(|(path, (hash, change))| {
+            let abs_path = abs_path(path).unwrap();
+            (path.clone(), abs_path, (hash, change))
+        });
+        let object_updates = updates.object().clone();
+        let object_change_log_iter = object_updates.iter().map(|(path, (hash, change))| {
+            let abs_path = abs_path(path).unwrap();
+            (path.clone(), abs_path, (hash, change))
+        });
+        let regular_updates = updates.regular().clone();
+        let change_log_iter = regular_updates.iter().map(|(path, (hash, change))| {
             let abs_path = abs_path(path).unwrap();
             (path.clone(), abs_path, (hash, change))
         });
 
         // First pass - handle schemas
-        for (path, abs_path, (_hash, diff_type)) in change_log_iter.clone() {
-            if path.file_name().map_or(false, |f| f == ".schema") {
-                println!("HANDLING SCHEMA at {:?}", path);
-                match diff_type {
-                    ChangeType::Added { .. } | ChangeType::Modified { .. }=> {
-                        handle_schema_file(&mut mount, &path, &abs_path).await?;
+        for (path, abs_path, (hash, diff_type)) in schema_change_log_iter {
+            // Read and parse schema file
+            let schema_str = std::fs::read_to_string(path.clone())?;
+            let schema: Schema = serde_json::from_str(&schema_str)
+                .map_err(|e| AddError::InvalidSchema(e.to_string()))?;
+
+            // NOTE: We're gauranteed to have a parrent dir
+            // Get the parent directory path for the schema
+            let parent_dir = abs_path.parent().ok_or_else(|| {
+                AddError::Default(anyhow::anyhow!("Schema file has no parent directory"))
+            })?;
+
+            match diff_type {
+                ChangeType::Added { modified: true, .. } => {
+                    // Add schema to the parent directory with persistence flag true
+                    mount.set_schema(parent_dir, schema).await?;
+                    if self.verbose {
+                        println!(" -> setting schema @ {}", parent_dir.display());
                     }
-                    ChangeType::Removed => {
-                        // TODO: Schema removal not yet supported
-                    }
-                    _ => continue,
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Added {
+                                modified: false,
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
                 }
+                ChangeType::Modified {
+                    processed: false, ..
+                } => {
+                    // Add schema to the parent directory with persistence flag true
+                    mount.set_schema(parent_dir, schema).await?;
+                    if self.verbose {
+                        println!(" -> updating schema @ {}", parent_dir.display());
+                    }
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Modified {
+                                processed: true,
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
+                }
+                ChangeType::Removed { processed: false, .. } => {
+                    // Remove schema from the parent directory
+                    mount.unset_schema(parent_dir).await?;
+                    if self.verbose {
+                        println!(" -> removing schema @ {}", parent_dir.display());
+                    }
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Removed { processed: true },
+                        ),
+                    );
+                }
+                _ => {}
             }
         }
 
         // Second pass - handle regular files
-        for (path, abs_path, (hash, diff_type)) in change_log_iter.clone() {
-            let file_name = path.file_name().map(|f| f.to_string_lossy().to_string());
-
-            // Skip schema and object files -- files named .schema and files who's parent is .obj
-            // only check obj if the parent has enough path segments to be a .obj directory
-            let maybe_parent = path.parent();
-            if file_name.as_deref() == Some(".schema")
-                || if let Some(parent) = maybe_parent {
-                    parent.file_name().map_or(false, |f| f == ".obj")
-                } else {
-                    false
-                }
-            {
-                continue;
-            }
-
+        for (path, abs_path, (hash, diff_type)) in change_log_iter {
+            let path_clone = path.clone();
             match diff_type {
-                ChangeType::Added { modified: true } => {
-                    let file = File::open(&path)?;
+                ChangeType::Added { modified: true, .. } => {
+                    // read the file and add it to the fucking mount
+
+                    let file = File::open(path)?;
                     if self.verbose {
-                        println!(" -> adding file {:?}", abs_path);
+                        println!(" -> adding file @ {}", abs_path.display());
                     }
                     mount.add(&abs_path, (file, false)).await?;
+                    updates.insert(
+                        path_clone,
+                        (
+                            *hash,
+                            ChangeType::Added {
+                                modified: false,
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
                 }
-                ChangeType::Modified { processed: false } => {
-                    let file = File::open(&path)?;
+                ChangeType::Modified {
+                    processed: false, ..
+                } => {
+                    // read the file and add it to the fucking mount
+                    let file = File::open(path)?;
                     if self.verbose {
-                        println!(" -> updating file {:?}", abs_path);
+                        println!(" -> updating file @ {}", abs_path.display());
                     }
                     mount.add(&abs_path, (file, false)).await?;
-                    updates.insert(path, (*hash, ChangeType::Modified { processed: true }));
+                    updates.insert(
+                        path_clone,
+                        (
+                            *hash,
+                            ChangeType::Modified {
+                                processed: true,
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
                 }
-                ChangeType::Removed => {
+                ChangeType::Removed { processed: false, .. } => {
                     mount.rm(&abs_path).await?;
+                    if self.verbose {
+                        println!(" -> removing file @ {}", abs_path.display());
+                    }
+                    updates.insert(
+                        path_clone,
+                        (
+                            *hash,
+                            ChangeType::Removed { processed: true },
+                        ),
+                    );
                 }
-                _ => continue,
+                _ => {}
             }
         }
 
         // Third pass - handle objects
-        for (path, abs_path, (_hash, diff_type)) in change_log_iter {
-            // Check if file is in a .obj directory
-            if let Some(parent) = path.parent() {
-                if parent.file_name().map_or(false, |f| f == ".obj") {
-                    match diff_type {
-                        ChangeType::Added { .. } | ChangeType::Modified { .. } => {
-                            handle_object_file(&mut mount, &path, &abs_path).await?;
-                        }
-                        // TODO: handle deleting object metadata
-                        _ => continue,
-                    }
+        for (path, abs_path, (hash, diff_type)) in object_change_log_iter {
+            // Get filename and verify format (.name.json)
+            let file_name = path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .and_then(|s| s.strip_suffix(".json"))
+                .and_then(|s| s.strip_prefix("."))
+                .ok_or_else(|| {
+                    AddError::Default(anyhow::anyhow!("Object files must be named .name.json"))
+                })?;
+
+            // For path/to/dir/.obj/.name.json, construct path/to/dir/name
+            let target_path = if let Some(obj_dir) = abs_path.parent() {
+                if let Some(parent_dir) = obj_dir.parent() {
+                    parent_dir.join(file_name)
+                } else {
+                    return Err(AddError::Default(anyhow::anyhow!("Invalid object path")));
                 }
+            } else {
+                return Err(AddError::Default(anyhow::anyhow!("Invalid object path")));
+            };
+
+            match diff_type {
+                ChangeType::Added { modified: true, .. } => {
+                    let obj_str = std::fs::read_to_string(path.clone())?;
+                    let object: Object = serde_json::from_str(&obj_str)
+                        .map_err(|e| AddError::InvalidSchema(e.to_string()))?;
+                    let object_clone = object.clone();
+                    // write back out in case we upserted created_at and updated_at
+                    let obj_str = serde_json::to_string_pretty(&object_clone)?;
+                    std::fs::write(path.clone(), obj_str)?;
+                    mount.tag(&target_path, object_clone).await?;
+                    if self.verbose {
+                        println!(" -> adding tag @ {}", target_path.display());
+                    }
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Added {
+                                modified: false,
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
+                }
+                ChangeType::Modified {
+                    processed: false, ..
+                } => {
+                    let obj_str = std::fs::read_to_string(path.clone())?;
+                    let object: Object = serde_json::from_str(&obj_str)
+                        .map_err(|e| AddError::InvalidSchema(e.to_string()))?;
+                    let object_clone = object.clone();
+                    mount.tag(&target_path, object_clone).await?;
+                    if self.verbose {
+                        println!(" -> updating tag @ {}", target_path.display());
+                    }
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Modified {
+                                processed: true,
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
+                }
+                ChangeType::Removed { processed: false, .. } => {
+                    mount.rm_tag(&target_path).await?;
+                    if self.verbose {
+                        println!(" -> removing tag @ {}", target_path.display());
+                    }
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Removed { processed: true },
+                        ),
+                    );
+                }
+                _ => {}
             }
         }
 
@@ -224,7 +315,7 @@ impl Op for Add {
         //  locally and only push when we want to
         mount.push().await?;
         let new_cid = *mount.cid();
-        
+
         state.save(&mount, Some(&updates), None)?;
 
         if new_cid == cid {
@@ -233,7 +324,6 @@ impl Op for Add {
                 cid: new_cid,
             });
         }
-
 
         Ok(AddOutput {
             previous_cid: cid,

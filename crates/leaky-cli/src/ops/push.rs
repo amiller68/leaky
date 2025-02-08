@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 
@@ -82,12 +83,22 @@ impl Op for Push {
         // Update the changelog to drop removed, and set everything else to base
         let change_log_iter = change_log.iter_mut();
         for (path, (hash, diff_type)) in change_log_iter {
+            
             match diff_type {
-                ChangeType::Removed => {
+                // NOTE: we should never have an unprocessed removed
+                ChangeType::Removed { .. } => {
                     updates.remove(path);
                 }
                 _ => {
-                    updates.insert(path.clone(), (*hash, ChangeType::Base));
+                    updates.insert(
+                        path.clone(),
+                        (
+                            *hash,
+                            ChangeType::Base {
+                                last_check: Some(SystemTime::now()),
+                            },
+                        ),
+                    );
                 }
             }
         }
