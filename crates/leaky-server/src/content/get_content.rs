@@ -45,20 +45,8 @@ pub async fn handler(
     tracing::debug!("Starting content request for path: {:?}", path_clone);
 
     let result = timeout(REQUEST_TIMEOUT, async move {
-        tracing::debug!("Acquiring database connection");
-        let db = state.sqlite_database();
-        let mut conn = db.acquire().await?;
-
-        tracing::debug!("Getting root CID");
-        let maybe_root_cid = RootCid::pull(&mut conn).await?;
-
-        tracing::debug!("Acquiring mount guard");
+        tracing::debug!("acquiring mount guard");
         let mount_guard = state.mount_guard();
-
-        match maybe_root_cid {
-            Some(_rc) => {}
-            None => return Err(GetContentError::RootNotFound),
-        };
 
         // Make the path absolute
         let path = PathBuf::from("/").join(path);
@@ -172,7 +160,7 @@ pub async fn handler(
     .await
     .map_err(|_| GetContentError::Timeout)?;
 
-    tracing::debug!("Completed content request for path: {:?}", path_clone);
+    tracing::debug!("completed content request for path: {:?}", path_clone);
     result
 }
 
