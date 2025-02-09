@@ -44,7 +44,7 @@ impl AppState {
                 let mount = Mount::init(&ipfs_rpc).await?;
                 let previous_cid = mount.previous_cid();
                 let cid = mount.cid();
-                RootCid::push(&cid, &previous_cid, &mut conn).await?;
+                RootCid::push(cid, &previous_cid, &mut conn).await?;
                 mount
             }
         };

@@ -64,7 +64,7 @@ impl Mount {
     }
 
     pub fn previous_cid(&self) -> Cid {
-        self.manifest.lock().previous().clone()
+        *self.manifest.lock().previous()
     }
 
     pub fn manifest(&self) -> Manifest {
@@ -376,7 +376,7 @@ impl Mount {
     ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         let block_cache = &self.block_cache;
         // let path = clean_path(path);
-        let node = self.get_node_at_path(&path).await?;
+        let node = self.get_node_at_path(path).await?;
         Self::_get_nodes_links_and_schemas_at_path(&node, &PathBuf::from("/"), block_cache).await
     }
 
@@ -394,7 +394,7 @@ impl Mount {
     /// * `Err(MountError)` - if the node could not be found
     async fn _get_node_at_path(
         node: &Node,
-        path: &PathBuf,
+        path: &Path,
         block_cache: &Arc<Mutex<BlockCache>>,
     ) -> Result<Node, MountError> {
         let mut current_node = node.clone();
@@ -446,14 +446,14 @@ impl Mount {
     #[async_recursion::async_recursion]
     async fn _get_nodes_links_and_schemas_at_path(
         node: &Node,
-        consumed_path: &PathBuf,
+        consumed_path: &Path,
         block_cache: &Arc<Mutex<BlockCache>>,
     ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
         let mut links = BTreeMap::new();
         let mut schemas = BTreeMap::new();
         // append our schema if it exists
         if let Some(schema) = node.schema() {
-            schemas.insert(consumed_path.clone(), schema.clone());
+            schemas.insert(consumed_path.to_path_buf(), schema.clone());
         }
         // iterate over the links and recurse
         for (name, link) in node.get_links() {
@@ -461,7 +461,7 @@ impl Mount {
                 let node = Self::get_cache::<Node>(cid, block_cache).await?;
                 let (mut _links, mut _schemas) = Self::_get_nodes_links_and_schemas_at_path(
                     &node,
-                    &consumed_path.join(&name),
+                    &consumed_path.join(name),
                     block_cache,
                 )
                 .await?;
@@ -470,7 +470,7 @@ impl Mount {
             }
             // if the link is a data link, we need to add it to the links
             if let NodeLink::Data(_, _) = link {
-                links.insert(consumed_path.join(&name), link.clone());
+                links.insert(consumed_path.join(name), link.clone());
             }
         }
         Ok((links, schemas))
@@ -497,7 +497,7 @@ impl Mount {
         let parent_path = path
             .parent()
             .ok_or_else(|| MountError::PathNotFound(path.to_path_buf()))?;
-        let parent_node = self.get_node_at_path(&parent_path).await?;
+        let parent_node = self.get_node_at_path(parent_path).await?;
 
         // Get the final link
         let link = parent_node
@@ -525,7 +525,7 @@ impl Mount {
         // Iterate over links using get_links()
         for (_, link) in node.get_links().iter() {
             if let NodeLink::Node(cid) = link {
-                Self::pull_nodes(&cid, block_cache, ipfs_rpc).await?;
+                Self::pull_nodes(cid, block_cache, ipfs_rpc).await?;
             }
         }
 

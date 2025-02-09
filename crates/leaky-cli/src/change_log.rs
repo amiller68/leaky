@@ -127,10 +127,10 @@ impl ChangeLog {
 
 impl FileType {
     pub fn from_path(path: &Path) -> Self {
-        if path.file_name().map_or(false, |f| f == ".schema") {
+        if path.file_name().is_some_and(|f| f == ".schema") {
             FileType::Schema
         } else if let Some(parent) = path.parent() {
-            if parent.file_name().map_or(false, |f| f == ".obj") {
+            if parent.file_name().is_some_and(|f| f == ".obj") {
                 FileType::Object
             } else {
                 FileType::Regular

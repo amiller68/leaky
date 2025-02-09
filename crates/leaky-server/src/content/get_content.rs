@@ -22,6 +22,17 @@ pub struct GetContentQuery {
     pub thumbnail: Option<bool>,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct Item {
+    cid: String,
+    path: String,
+    is_dir: bool,
+    object: Option<Object>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct LsResponse(Vec<Item>);
+
 pub async fn handler(
     State(state): State<AppState>,
     AxumPath(path): AxumPath<PathBuf>,
@@ -41,6 +52,7 @@ pub async fn handler(
     // Make the path absolute
     let path = PathBuf::from("/").join(path);
 
+    // TODO: add formatting for html requests
     let ls_result = mount_guard.ls(&path).await;
     match ls_result {
         Ok((ls, _)) => {
@@ -48,7 +60,22 @@ pub async fn handler(
                 return Ok((
                     http::StatusCode::OK,
                     [(CONTENT_TYPE, "application/json")],
-                    Json(ls),
+                    Json(LsResponse(
+                        ls.into_iter()
+                            .map(|(path, link)| Item {
+                                cid: link.cid().to_string(),
+                                path: path.to_str().unwrap().to_string(),
+                                is_dir: match link {
+                                    NodeLink::Node(_) => true,
+                                    NodeLink::Data(_, _) => false,
+                                },
+                                object: match link {
+                                    NodeLink::Node(_) => None,
+                                    NodeLink::Data(_, object) => object,
+                                },
+                            })
+                            .collect(),
+                    )),
                 )
                     .into_response());
             }

@@ -44,7 +44,7 @@ pub async fn handler(
     conn.commit().await?;
 
     let mut mount_guard = state.mount_guard();
-    mount_guard.update(root_cid.cid().clone()).await?;
+    mount_guard.update(root_cid.cid()).await?;
 
     Ok((http::StatusCode::OK, Json(PushRootResponse::from(root_cid))).into_response())
 }

@@ -104,15 +104,15 @@ impl Op for Pull {
                 (Some((pi_path, pi_link)), Some((ci_tree, ci_path))) => {
                     // Skip .obj directories and schema files
                     if ci_tree.is_dir()
-                        || ci_path.to_str().map_or(false, |p| p.contains("/.obj/"))
-                        || ci_path.to_str().map_or(false, |p| p.ends_with(".schema"))
+                        || ci_path.to_str().is_some_and(|p| p.contains("/.obj/"))
+                        || ci_path.to_str().is_some_and(|p| p.ends_with(".schema"))
                     {
                         ci_next = ci_iter.next();
                         continue;
                     }
 
                     let normalized_ci_path =
-                        if ci_path.to_str().map_or(false, |p| p.ends_with(".json")) {
+                        if ci_path.to_str().is_some_and(|p| p.ends_with(".json")) {
                             // Skip object files in comparison
                             ci_next = ci_iter.next();
                             continue;
@@ -121,7 +121,7 @@ impl Op for Pull {
                         };
 
                     // Skip schema files in pulled items comparison
-                    if pi_path.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                    if pi_path.to_str().is_some_and(|p| p.ends_with(".schema")) {
                         pi_next = pi_iter.next();
                         continue;
                     }
@@ -146,7 +146,7 @@ impl Op for Pull {
                 }
                 (Some(pi), None) => {
                     // Skip schema files in pulled items
-                    if pi.0.to_str().map_or(false, |p| p.ends_with(".schema")) {
+                    if pi.0.to_str().is_some_and(|p| p.ends_with(".schema")) {
                         pi_next = pi_iter.next();
                         continue;
                     }
@@ -155,8 +155,8 @@ impl Op for Pull {
                 }
                 (None, Some((_, ci_path))) => {
                     // Don't prune .obj directories or schema files
-                    if !ci_path.to_str().map_or(false, |p| p.contains("/.obj/"))
-                        && !ci_path.to_str().map_or(false, |p| p.ends_with(".schema"))
+                    if !ci_path.to_str().is_some_and(|p| p.contains("/.obj/"))
+                        && !ci_path.to_str().is_some_and(|p| p.ends_with(".schema"))
                     {
                         to_prune.push(ci_path);
                     }
@@ -183,29 +183,27 @@ impl Op for Pull {
             // Write object file if it exists
             let matching_item = pulled_items.iter().find(|(p, _)| p == path);
 
-            if let Some((_, link)) = matching_item {
-                if let NodeLink::Data(_, Some(object)) = link {
-                    let obj_dir = path.parent().unwrap().join(".obj");
-                    std::fs::create_dir_all(&obj_dir)?;
+            if let Some((_, NodeLink::Data(_, Some(object)))) = matching_item {
+                let obj_dir = path.parent().unwrap().join(".obj");
+                std::fs::create_dir_all(&obj_dir)?;
 
-                    let file_name = path.file_name().unwrap().to_str().unwrap();
-                    let obj_path = obj_dir.join(format!(".{}.json", file_name));
+                let file_name = path.file_name().unwrap().to_str().unwrap();
+                let obj_path = obj_dir.join(format!(".{}.json", file_name));
 
-                    let obj_str = serde_json::to_string_pretty(&object)?;
-                    std::fs::write(&obj_path, obj_str)?;
+                let obj_str = serde_json::to_string_pretty(&object)?;
+                std::fs::write(&obj_path, obj_str)?;
 
-                    // write the object file into the change log
-                    let cid = utils::hash_file(&obj_path, &local_ipfs_rpc, None).await?;
-                    change_log.insert(
-                        obj_path.clone(),
-                        (
-                            cid,
-                            ChangeType::Base {
-                                last_check: Some(SystemTime::now()),
-                            },
-                        ),
-                    );
-                }
+                // write the object file into the change log
+                let cid = utils::hash_file(&obj_path, &local_ipfs_rpc, None).await?;
+                change_log.insert(
+                    obj_path.clone(),
+                    (
+                        cid,
+                        ChangeType::Base {
+                            last_check: Some(SystemTime::now()),
+                        },
+                    ),
+                );
             }
         }
 
