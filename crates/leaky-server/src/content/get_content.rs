@@ -6,6 +6,8 @@ use regex::Regex;
 use std::io::Cursor;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+use tokio::time::timeout;
 use url::Url;
 
 use leaky_common::prelude::*;
@@ -15,6 +17,7 @@ use crate::database::models::RootCid;
 
 const MAX_WIDTH: u32 = 300;
 const MAX_HEIGHT: u32 = 300;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, serde::Deserialize)]
 pub struct GetContentQuery {
@@ -38,118 +41,139 @@ pub async fn handler(
     AxumPath(path): AxumPath<PathBuf>,
     Query(query): Query<GetContentQuery>,
 ) -> Result<impl IntoResponse, GetContentError> {
-    let db = state.sqlite_database();
-    let mut conn = db.acquire().await?;
-    let maybe_root_cid = RootCid::pull(&mut conn).await?;
+    let path_clone = path.clone();
+    tracing::debug!("Starting content request for path: {:?}", path_clone);
 
-    match maybe_root_cid {
-        Some(_rc) => {}
-        None => return Err(GetContentError::RootNotFound),
-    };
+    let result = timeout(REQUEST_TIMEOUT, async move {
+        tracing::debug!("Acquiring database connection");
+        let db = state.sqlite_database();
+        let mut conn = db.acquire().await?;
 
-    let mount_guard = state.mount_guard();
+        tracing::debug!("Getting root CID");
+        let maybe_root_cid = RootCid::pull(&mut conn).await?;
 
-    // Make the path absolute
-    let path = PathBuf::from("/").join(path);
+        tracing::debug!("Acquiring mount guard");
+        let mount_guard = state.mount_guard();
 
-    // TODO: add formatting for html requests
-    let ls_result = mount_guard.ls(&path).await;
-    match ls_result {
-        Ok((ls, _)) => {
-            if !ls.is_empty() {
-                return Ok((
-                    http::StatusCode::OK,
-                    [(CONTENT_TYPE, "application/json")],
-                    Json(LsResponse(
-                        ls.into_iter()
-                            .map(|(path, link)| Item {
-                                cid: link.cid().to_string(),
-                                path: path.to_str().unwrap().to_string(),
-                                is_dir: match link {
-                                    NodeLink::Node(_) => true,
-                                    NodeLink::Data(_, _) => false,
-                                },
-                                object: match link {
-                                    NodeLink::Node(_) => None,
-                                    NodeLink::Data(_, object) => object,
-                                },
-                            })
-                            .collect(),
-                    )),
-                )
-                    .into_response());
+        match maybe_root_cid {
+            Some(_rc) => {}
+            None => return Err(GetContentError::RootNotFound),
+        };
+
+        // Make the path absolute
+        let path = PathBuf::from("/").join(path);
+
+        // TODO: add formatting for html requests
+        let ls_result = mount_guard.ls(&path).await;
+        match ls_result {
+            Ok((ls, _)) => {
+                if !ls.is_empty() {
+                    return Ok((
+                        http::StatusCode::OK,
+                        [(CONTENT_TYPE, "application/json")],
+                        Json(LsResponse(
+                            ls.into_iter()
+                                .map(|(path, link)| Item {
+                                    cid: link.cid().to_string(),
+                                    path: path.to_str().unwrap().to_string(),
+                                    is_dir: match link {
+                                        NodeLink::Node(_) => true,
+                                        NodeLink::Data(_, _) => false,
+                                    },
+                                    object: match link {
+                                        NodeLink::Node(_) => None,
+                                        NodeLink::Data(_, object) => object,
+                                    },
+                                })
+                                .collect(),
+                        )),
+                    )
+                        .into_response());
+                }
             }
-        }
-        Err(MountError::PathNotDir(_)) => {}
-        Err(e) => return Err(GetContentError::Mount(e)),
-    };
+            Err(MountError::PathNotDir(_)) => {}
+            Err(MountError::PathNotFound(_)) => {
+                return Err(GetContentError::NotFound);
+            }
+            Err(e) => return Err(GetContentError::Mount(e)),
+        };
 
-    let ext = path
-        .extension()
-        .unwrap_or_default()
-        .to_str()
-        .unwrap_or_default();
+        let ext = path
+            .extension()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or_default();
 
-    match ext {
-        // Markdown
-        "md" => {
-            if query.html.unwrap_or(false) {
-                let base_path = path.parent().unwrap_or_else(|| Path::new(""));
-                let get_content_url = state.get_content_forwarding_url().join("content").unwrap();
+        match ext {
+            // Markdown
+            "md" => {
+                if query.html.unwrap_or(false) {
+                    let base_path = path.parent().unwrap_or_else(|| Path::new(""));
+                    let get_content_url =
+                        state.get_content_forwarding_url().join("content").unwrap();
 
+                    let data = mount_guard
+                        .cat(&path)
+                        .await
+                        .map_err(|_| GetContentError::NotFound)?;
+
+                    let html = markdown_to_html(data, base_path, &get_content_url);
+                    Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
+                } else {
+                    let data = mount_guard
+                        .cat(&path)
+                        .await
+                        .map_err(|_| GetContentError::NotFound)?;
+
+                    Ok(
+                        (http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data)
+                            .into_response(),
+                    )
+                }
+            }
+            // Images
+            "png" | "jpg" | "jpeg" | "gif" => {
                 let data = mount_guard
                     .cat(&path)
                     .await
                     .map_err(|_| GetContentError::NotFound)?;
-
-                let html = markdown_to_html(data, base_path, &get_content_url);
-                Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
-            } else {
+                if query.thumbnail.unwrap_or(false) && ext != "gif" {
+                    let resized_image = resize_image(&data, ext)?;
+                    Ok((
+                        http::StatusCode::OK,
+                        [(CONTENT_TYPE, format!("image/{}", ext))],
+                        resized_image,
+                    )
+                        .into_response())
+                } else {
+                    Ok((
+                        http::StatusCode::OK,
+                        [(CONTENT_TYPE, format!("image/{}", ext))],
+                        data,
+                    )
+                        .into_response())
+                }
+            }
+            // All other files
+            _ => {
                 let data = mount_guard
                     .cat(&path)
                     .await
                     .map_err(|_| GetContentError::NotFound)?;
-
-                Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data).into_response())
-            }
-        }
-        // Images
-        "png" | "jpg" | "jpeg" | "gif" => {
-            let data = mount_guard
-                .cat(&path)
-                .await
-                .map_err(|_| GetContentError::NotFound)?;
-            if query.thumbnail.unwrap_or(false) && ext != "gif" {
-                let resized_image = resize_image(&data, ext)?;
                 Ok((
                     http::StatusCode::OK,
-                    [(CONTENT_TYPE, format!("image/{}", ext))],
-                    resized_image,
-                )
-                    .into_response())
-            } else {
-                Ok((
-                    http::StatusCode::OK,
-                    [(CONTENT_TYPE, format!("image/{}", ext))],
+                    [(CONTENT_TYPE, "application/octet-stream")],
                     data,
                 )
                     .into_response())
             }
         }
-        // All other files
-        _ => {
-            let data = mount_guard
-                .cat(&path)
-                .await
-                .map_err(|_| GetContentError::NotFound)?;
-            Ok((
-                http::StatusCode::OK,
-                [(CONTENT_TYPE, "application/octet-stream")],
-                data,
-            )
-                .into_response())
-        }
-    }
+    })
+    .await
+    .map_err(|_| GetContentError::Timeout)?;
+
+    tracing::debug!("Completed content request for path: {:?}", path_clone);
+    result
 }
 
 fn resize_image(img_data: &[u8], format: &str) -> Result<Vec<u8>, GetContentError> {
@@ -249,6 +273,8 @@ pub enum GetContentError {
     ImageProcessing(String),
     #[error("Unsupported image format")]
     UnsupportedImageFormat,
+    #[error("Request timed out")]
+    Timeout,
 }
 
 impl IntoResponse for GetContentError {
@@ -276,6 +302,12 @@ impl IntoResponse for GetContentError {
                 http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
                 [(CONTENT_TYPE, "text/plain")],
                 "Unsupported image format",
+            )
+                .into_response(),
+            GetContentError::Timeout => (
+                http::StatusCode::REQUEST_TIMEOUT,
+                [(CONTENT_TYPE, "text/plain")],
+                "Request timed out",
             )
                 .into_response(),
         }
