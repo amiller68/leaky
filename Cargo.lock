@@ -2183,6 +2183,7 @@ dependencies = [
  "pico-args",
  "pulldown-cmark",
  "regex",
+ "scopeguard",
  "serde",
  "serde_json",
  "sqlx",

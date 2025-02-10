@@ -1,7 +1,4 @@
-use parking_lot::Mutex;
-use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::extract::FromRef;
@@ -11,15 +8,17 @@ use leaky_common::prelude::*;
 
 use super::config::Config;
 use crate::database::{models::RootCid, Database};
+use parking_lot::RwLock;
+use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct AppState {
     get_content_forwarding_url: Url,
     sqlite_database: Database,
-    mount: Arc<Mutex<Mount>>,
+    mount: Arc<RwLock<Mount>>,
+    request_semaphore: Arc<Semaphore>,
 }
 
-#[allow(dead_code)]
 impl AppState {
     pub fn get_content_forwarding_url(&self) -> &Url {
         &self.get_content_forwarding_url
@@ -29,7 +28,11 @@ impl AppState {
         &self.sqlite_database
     }
 
-    pub fn mount(&self) -> Arc<Mutex<Mount>> {
+    pub fn mount_for_reading(&self) -> Mount {
+        self.mount.read().clone()
+    }
+
+    pub fn mount(&self) -> Arc<RwLock<Mount>> {
         self.mount.clone()
     }
 
@@ -52,18 +55,23 @@ impl AppState {
         Ok(Self {
             get_content_forwarding_url: config.get_content_forwarding_url().clone(),
             sqlite_database,
-            mount: Arc::new(Mutex::new(mount)),
+            mount: Arc::new(RwLock::new(mount)),
+            request_semaphore: Arc::new(Semaphore::new(100)),
         })
     }
 
-    pub fn mount_guard(&self) -> MountGuard {
+    pub fn request_semaphore(&self) -> Arc<Semaphore> {
+        self.request_semaphore.clone()
+    }
+
+    pub fn mount_guard_mut(&self) -> MountGuardMut {
         let guard = unsafe {
             std::mem::transmute::<
-                parking_lot::MutexGuard<'_, Mount>,
-                parking_lot::MutexGuard<'static, Mount>,
-            >(self.mount.lock())
+                parking_lot::RwLockWriteGuard<'_, Mount>,
+                parking_lot::RwLockWriteGuard<'static, Mount>,
+            >(self.mount.write())
         };
-        MountGuard { _lock: guard }
+        MountGuardMut { _lock: guard }
     }
 }
 
@@ -79,9 +87,19 @@ impl FromRef<AppState> for Database {
 //     }
 // }
 
-impl FromRef<AppState> for Arc<Mutex<Mount>> {
+impl FromRef<AppState> for Arc<RwLock<Mount>> {
     fn from_ref(app_state: &AppState) -> Self {
         app_state.mount.clone()
+    }
+}
+
+pub struct MountGuardMut {
+    _lock: parking_lot::RwLockWriteGuard<'static, Mount>,
+}
+
+impl MountGuardMut {
+    pub async fn update(&mut self, cid: Cid) -> Result<(), MountError> {
+        self._lock.update(cid).await
     }
 }
 
@@ -99,44 +117,4 @@ pub enum AppStateSetupError {
     Mount(#[from] MountError),
     #[error("Unsupported image format")]
     UnsupportedImageFormat,
-}
-
-pub struct MountGuard {
-    _lock: parking_lot::MutexGuard<'static, Mount>,
-}
-
-// Explicitly implement Send for MountGuard
-// SAFETY: Mount is Send, and we're using parking_lot::Mutex which is Send
-unsafe impl Send for MountGuard {}
-
-impl MountGuard {
-    pub fn cid(&self) -> &Cid {
-        self._lock.cid()
-    }
-
-    pub async fn ls(
-        &self,
-        path: &Path,
-    ) -> Result<(BTreeMap<PathBuf, NodeLink>, Option<Schema>), MountError> {
-        self._lock.ls(path).await
-    }
-
-    pub async fn ls_deep(
-        &self,
-        path: &Path,
-    ) -> Result<(BTreeMap<PathBuf, NodeLink>, BTreeMap<PathBuf, Schema>), MountError> {
-        self._lock.ls_deep(path).await
-    }
-
-    pub async fn cat(&self, path: &Path) -> Result<Vec<u8>, MountError> {
-        self._lock.cat(path).await
-    }
-
-    pub async fn update(&mut self, cid: Cid) -> Result<(), MountError> {
-        self._lock.update(cid).await
-    }
-
-    pub fn manifest(&self) -> Manifest {
-        self._lock.manifest()
-    }
 }

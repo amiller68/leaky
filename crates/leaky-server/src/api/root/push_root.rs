@@ -43,8 +43,16 @@ pub async fn handler(
     let root_cid = RootCid::push(&cid, &previous_cid, &mut conn).await?;
     conn.commit().await?;
 
-    let mut mount_guard = state.mount_guard();
-    mount_guard.update(root_cid.cid()).await?;
+    let mount = state.mount();
+    let cid = root_cid.cid();
+
+    tokio::task::spawn_blocking(move || {
+        let mut guard = mount.write();
+        futures::executor::block_on(guard.update(cid))
+    })
+    .await
+    .map_err(PushRootError::JoinError)?
+    .map_err(PushRootError::MountError)?;
 
     Ok((http::StatusCode::OK, Json(PushRootResponse::from(root_cid))).into_response())
 }
@@ -59,6 +67,8 @@ pub enum PushRootError {
     RootCid(#[from] crate::database::models::RootCidError),
     #[error("mount error: {0}")]
     MountError(#[from] leaky_common::error::MountError),
+    #[error("join error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 impl IntoResponse for PushRootError {
@@ -88,6 +98,14 @@ impl IntoResponse for PushRootError {
                     (http::StatusCode::CONFLICT, "conflict").into_response()
                 }
             },
+            PushRootError::JoinError(e) => {
+                tracing::error!("join error: {}", e);
+                (
+                    http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "unknown server error",
+                )
+                    .into_response()
+            }
         }
     }
 }

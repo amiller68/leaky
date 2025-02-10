@@ -6,18 +6,14 @@ use regex::Regex;
 use std::io::Cursor;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Duration;
-use tokio::time::timeout;
 use url::Url;
 
 use leaky_common::prelude::*;
 
 use crate::app::AppState;
-use crate::database::models::RootCid;
 
 const MAX_WIDTH: u32 = 300;
 const MAX_HEIGHT: u32 = 300;
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, serde::Deserialize)]
 pub struct GetContentQuery {
@@ -36,132 +32,154 @@ struct Item {
 #[derive(Debug, serde::Serialize)]
 struct LsResponse(Vec<Item>);
 
+#[axum::debug_handler]
 pub async fn handler(
     State(state): State<AppState>,
     AxumPath(path): AxumPath<PathBuf>,
     Query(query): Query<GetContentQuery>,
 ) -> Result<impl IntoResponse, GetContentError> {
     let path_clone = path.clone();
-    tracing::debug!("Starting content request for path: {:?}", path_clone);
+    tracing::info!(
+        "Starting content request for path: {:?} with query: {:?}",
+        path_clone,
+        query
+    );
 
-    let result = timeout(REQUEST_TIMEOUT, async move {
-        tracing::debug!("acquiring mount guard");
-        let mount_guard = state.mount_guard();
+    let mount = state.mount_for_reading();
+    let path = PathBuf::from("/").join(path);
+    tracing::debug!("Absolute path: {:?}", path);
 
-        // Make the path absolute
-        let path = PathBuf::from("/").join(path);
+    let ls_result = mount.ls(&path).await;
+    tracing::debug!("ls result for {:?}: {:?}", path, ls_result);
 
-        // TODO: add formatting for html requests
-        let ls_result = mount_guard.ls(&path).await;
-        match ls_result {
-            Ok((ls, _)) => {
-                if !ls.is_empty() {
-                    return Ok((
-                        http::StatusCode::OK,
-                        [(CONTENT_TYPE, "application/json")],
-                        Json(LsResponse(
-                            ls.into_iter()
-                                .map(|(path, link)| Item {
-                                    cid: link.cid().to_string(),
-                                    path: path.to_str().unwrap().to_string(),
-                                    is_dir: match link {
-                                        NodeLink::Node(_) => true,
-                                        NodeLink::Data(_, _) => false,
-                                    },
-                                    object: match link {
-                                        NodeLink::Node(_) => None,
-                                        NodeLink::Data(_, object) => object,
-                                    },
-                                })
-                                .collect(),
-                        )),
-                    )
-                        .into_response());
+    match ls_result {
+        Ok((ls, _)) => {
+            if !ls.is_empty() {
+                tracing::debug!(
+                    "Found directory listing with {} items for path: {:?}",
+                    ls.len(),
+                    path
+                );
+                return Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, "application/json")],
+                    Json(LsResponse(
+                        ls.into_iter()
+                            .map(|(path, link)| Item {
+                                cid: link.cid().to_string(),
+                                path: path.to_str().unwrap().to_string(),
+                                is_dir: match link {
+                                    NodeLink::Node(_) => true,
+                                    NodeLink::Data(_, _) => false,
+                                },
+                                object: match link {
+                                    NodeLink::Node(_) => None,
+                                    NodeLink::Data(_, object) => object,
+                                },
+                            })
+                            .collect(),
+                    )),
+                )
+                    .into_response());
+            }
+            tracing::debug!("Empty directory listing for path: {:?}", path);
+        }
+        Err(MountError::PathNotDir(_)) => {
+            tracing::debug!("Path is not a directory: {:?}", path);
+        }
+        Err(MountError::PathNotFound(_)) => {
+            tracing::debug!("Path not found: {:?}", path);
+            return Err(GetContentError::NotFound);
+        }
+        Err(e) => {
+            tracing::error!("Mount error for path {:?}: {:?}", path, e);
+            return Err(GetContentError::Mount(e));
+        }
+    }
+
+    let ext = path
+        .extension()
+        .unwrap_or_default()
+        .to_str()
+        .unwrap_or_default();
+    tracing::debug!(
+        "Processing file with extension: {} for path: {:?}",
+        ext,
+        path
+    );
+
+    match ext {
+        "md" => {
+            tracing::debug!("Processing markdown file: {:?}", path);
+            if query.html.unwrap_or(false) {
+                let base_path = path.parent().unwrap_or_else(|| Path::new(""));
+                let get_content_url = state.get_content_forwarding_url().join("content").unwrap();
+
+                let data = {
+                    let future = mount.cat(&path);
+                    future.await
                 }
-            }
-            Err(MountError::PathNotDir(_)) => {}
-            Err(MountError::PathNotFound(_)) => {
-                return Err(GetContentError::NotFound);
-            }
-            Err(e) => return Err(GetContentError::Mount(e)),
-        };
+                .map_err(|_| GetContentError::NotFound)?;
 
-        let ext = path
-            .extension()
-            .unwrap_or_default()
-            .to_str()
-            .unwrap_or_default();
-
-        match ext {
-            // Markdown
-            "md" => {
-                if query.html.unwrap_or(false) {
-                    let base_path = path.parent().unwrap_or_else(|| Path::new(""));
-                    let get_content_url =
-                        state.get_content_forwarding_url().join("content").unwrap();
-
-                    let data = mount_guard
-                        .cat(&path)
-                        .await
-                        .map_err(|_| GetContentError::NotFound)?;
-
-                    let html = markdown_to_html(data, base_path, &get_content_url);
-                    Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
-                } else {
-                    let data = mount_guard
-                        .cat(&path)
-                        .await
-                        .map_err(|_| GetContentError::NotFound)?;
-
-                    Ok(
-                        (http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data)
-                            .into_response(),
-                    )
+                let html = markdown_to_html(data, base_path, &get_content_url);
+                Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/html")], html).into_response())
+            } else {
+                let data = {
+                    let future = mount.cat(&path);
+                    future.await
                 }
+                .map_err(|_| GetContentError::NotFound)?;
+
+                Ok((http::StatusCode::OK, [(CONTENT_TYPE, "text/plain")], data).into_response())
             }
-            // Images
-            "png" | "jpg" | "jpeg" | "gif" => {
-                let data = mount_guard
-                    .cat(&path)
-                    .await
-                    .map_err(|_| GetContentError::NotFound)?;
-                if query.thumbnail.unwrap_or(false) && ext != "gif" {
-                    let resized_image = resize_image(&data, ext)?;
-                    Ok((
-                        http::StatusCode::OK,
-                        [(CONTENT_TYPE, format!("image/{}", ext))],
-                        resized_image,
-                    )
-                        .into_response())
-                } else {
-                    Ok((
-                        http::StatusCode::OK,
-                        [(CONTENT_TYPE, format!("image/{}", ext))],
-                        data,
-                    )
-                        .into_response())
-                }
+        }
+        "png" | "jpg" | "jpeg" | "gif" => {
+            tracing::debug!(
+                "Processing image file: {:?} with thumbnail: {:?}",
+                path,
+                query.thumbnail
+            );
+            let data = {
+                let future = mount.cat(&path);
+                future.await
             }
-            // All other files
-            _ => {
-                let data = mount_guard
-                    .cat(&path)
-                    .await
-                    .map_err(|_| GetContentError::NotFound)?;
+            .map_err(|_| GetContentError::NotFound)?;
+            if query.thumbnail.unwrap_or(false) && ext != "gif" {
+                let resized_image = resize_image(&data, ext)?;
                 Ok((
                     http::StatusCode::OK,
-                    [(CONTENT_TYPE, "application/octet-stream")],
+                    [(CONTENT_TYPE, format!("image/{}", ext))],
+                    resized_image,
+                )
+                    .into_response())
+            } else {
+                Ok((
+                    http::StatusCode::OK,
+                    [(CONTENT_TYPE, format!("image/{}", ext))],
                     data,
                 )
                     .into_response())
             }
         }
-    })
-    .await
-    .map_err(|_| GetContentError::Timeout)?;
-
-    tracing::debug!("completed content request for path: {:?}", path_clone);
-    result
+        _ => {
+            tracing::debug!("Processing generic file: {:?}", path);
+            let data = {
+                let future = mount.cat(&path);
+                future.await
+            }
+            .map_err(|e| {
+                tracing::error!("Failed to read file {:?}: {:?}", path, e);
+                GetContentError::NotFound
+            })?;
+            tracing::debug!("Successfully read {} bytes from {:?}", data.len(), path);
+            Ok((
+                http::StatusCode::OK,
+                [(CONTENT_TYPE, "application/octet-stream")],
+                data,
+            )
+                .into_response())
+        }
+    }
 }
 
 fn resize_image(img_data: &[u8], format: &str) -> Result<Vec<u8>, GetContentError> {
@@ -251,8 +269,6 @@ pub enum GetContentError {
     Database(#[from] sqlx::Error),
     #[error("root CID error: {0}")]
     RootCid(#[from] crate::database::models::RootCidError),
-    #[error("No root CID found")]
-    RootNotFound,
     #[error("not found")]
     NotFound,
     #[error("mount error: {0}")]
@@ -261,8 +277,8 @@ pub enum GetContentError {
     ImageProcessing(String),
     #[error("Unsupported image format")]
     UnsupportedImageFormat,
-    #[error("Request timed out")]
-    Timeout,
+    #[error("Failed to acquire semaphore: {0}")]
+    Semaphore(#[from] tokio::sync::AcquireError),
 }
 
 impl IntoResponse for GetContentError {
@@ -280,7 +296,7 @@ impl IntoResponse for GetContentError {
                 )
                     .into_response()
             }
-            GetContentError::RootNotFound | GetContentError::NotFound => (
+            GetContentError::NotFound => (
                 http::StatusCode::NOT_FOUND,
                 [(CONTENT_TYPE, "text/plain")],
                 "Not found",
@@ -292,10 +308,10 @@ impl IntoResponse for GetContentError {
                 "Unsupported image format",
             )
                 .into_response(),
-            GetContentError::Timeout => (
-                http::StatusCode::REQUEST_TIMEOUT,
+            GetContentError::Semaphore(_) => (
+                http::StatusCode::INTERNAL_SERVER_ERROR,
                 [(CONTENT_TYPE, "text/plain")],
-                "Request timed out",
+                "Failed to acquire semaphore",
             )
                 .into_response(),
         }

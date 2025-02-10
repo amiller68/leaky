@@ -1,20 +1,39 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use std::time::Duration;
+use tokio::time::timeout;
 
 use super::data_source::*;
 
+const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub async fn handler(data_src: StateDataSource) -> Response {
-    match data_src.is_ready().await {
-        Ok(_) => {
-            let msg = serde_json::json!({"status": "ok"});
-            (StatusCode::OK, Json(msg)).into_response()
+    match timeout(HEALTH_CHECK_TIMEOUT, data_src.is_ready()).await {
+        Ok(result) => match result {
+            Ok(_) => {
+                let msg = serde_json::json!({"status": "ok"});
+                (StatusCode::OK, Json(msg)).into_response()
+            }
+            Err(e) => handle_error(e),
+        },
+        Err(_) => {
+            let msg = serde_json::json!({
+                "status": "failure",
+                "message": "health check timed out"
+            });
+            (StatusCode::SERVICE_UNAVAILABLE, Json(msg)).into_response()
         }
-        Err(DataSourceError::DependencyFailure) => {
+    }
+}
+
+fn handle_error(err: DataSourceError) -> Response {
+    match err {
+        DataSourceError::DependencyFailure => {
             let msg = serde_json::json!({"status": "failure", "message": "one or more dependencies aren't available"});
             (StatusCode::SERVICE_UNAVAILABLE, Json(msg)).into_response()
         }
-        Err(DataSourceError::ShuttingDown) => {
+        DataSourceError::ShuttingDown => {
             let msg =
                 serde_json::json!({"status": "failure", "message": "service is shutting down"});
             (StatusCode::SERVICE_UNAVAILABLE, Json(msg)).into_response()
