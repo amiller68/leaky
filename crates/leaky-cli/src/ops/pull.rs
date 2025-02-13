@@ -184,16 +184,18 @@ impl Op for Pull {
             let matching_item = pulled_items.iter().find(|(p, _)| p == path);
 
             if let Some((_, NodeLink::Data(_, Some(object)))) = matching_item {
-                let obj_dir = path.parent().unwrap().join(".obj");
-                std::fs::create_dir_all(&obj_dir)?;
+                // Get base path without extension
+                let stem = path.file_stem().unwrap().to_str().unwrap();
+                let parent = path.parent().unwrap();
 
-                let file_name = path.file_name().unwrap().to_str().unwrap();
-                let obj_path = obj_dir.join(format!(".{}.json", file_name));
+                // Create object file path: <name>.obj.md
+                let obj_path = parent.join(format!("{}.obj.md", stem));
 
-                let obj_str = serde_json::to_string_pretty(&object)?;
+                // Serialize with surrounding ```json
+                let obj_str = format!("```json\n{}\n```", serde_json::to_string_pretty(&object)?);
                 std::fs::write(&obj_path, obj_str)?;
 
-                // write the object file into the change log
+                // Write to change log
                 let cid = utils::hash_file(&obj_path, &local_ipfs_rpc, None).await?;
                 change_log.insert(
                     obj_path.clone(),
@@ -213,12 +215,12 @@ impl Op for Pull {
 
         // Handle schemas last, after all files are processed
         for (path, schema) in pulled_schemas {
-            let schema_path = path.join(".schema");
-            let schema_str = serde_json::to_string_pretty(&schema)?;
+            let schema_path = path.join("schema.md");
+            let schema_str = format!("```json\n{}\n```", serde_json::to_string_pretty(&schema)?);
             std::fs::create_dir_all(&path)?;
             std::fs::write(&schema_path, schema_str)?;
 
-            // write the schema file into the change log
+            // Write schema to change log
             let cid = utils::hash_file(&schema_path, &local_ipfs_rpc, None).await?;
             change_log.insert(
                 schema_path.clone(),

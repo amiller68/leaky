@@ -96,24 +96,28 @@ impl Op for Add {
 
         // First pass - handle schemas
         for (path, abs_path, (hash, diff_type)) in schema_change_log_iter {
-            // Read and parse schema file
-            let schema_str = std::fs::read_to_string(path.clone())?;
-            let schema: Schema = serde_json::from_str(&schema_str)
-                .map_err(|e| AddError::InvalidSchema(e.to_string()))?;
-
-            // NOTE: We're gauranteed to have a parrent dir
-            // Get the parent directory path for the schema
-            let parent_dir = abs_path.parent().ok_or_else(|| {
-                AddError::Default(anyhow::anyhow!("Schema file has no parent directory"))
-            })?;
-
             match diff_type {
                 ChangeType::Added { modified: true, .. } => {
-                    // Add schema to the parent directory with persistence flag true
-                    mount.set_schema(parent_dir, schema).await?;
+                    let contents = std::fs::read_to_string(path.clone())?;
+
+                    let json = contents
+                        .split("```json\n")
+                        .nth(1)
+                        .and_then(|s| s.split("\n```").next())
+                        .ok_or_else(|| {
+                            AddError::InvalidSchema("Invalid schema file format".to_string())
+                        })?;
+
+                    let schema: Schema = serde_json::from_str(json)?;
+                    mount.set_schema(abs_path.parent().unwrap(), schema).await?;
+
                     if self.verbose {
-                        println!(" -> setting schema @ {}", parent_dir.display());
+                        println!(
+                            " -> setting schema @ {}",
+                            abs_path.parent().unwrap().display()
+                        );
                     }
+
                     updates.insert(
                         path.clone(),
                         (
@@ -128,11 +132,28 @@ impl Op for Add {
                 ChangeType::Modified {
                     processed: false, ..
                 } => {
-                    // Add schema to the parent directory with persistence flag true
-                    mount.set_schema(parent_dir, schema).await?;
+                    let contents = std::fs::read_to_string(path.clone())?;
+
+                    let json = contents
+                        .split("```json\n")
+                        .nth(1)
+                        .and_then(|s| s.split("\n```").next())
+                        .ok_or_else(|| {
+                            AddError::InvalidSchema("Invalid schema file format".to_string())
+                        })?;
+
+                    let schema: Schema = serde_json::from_str(json)?;
+                    mount
+                        .set_schema(abs_path.parent().unwrap(), schema)
+                        .await?;
+
                     if self.verbose {
-                        println!(" -> updating schema @ {}", parent_dir.display());
+                        println!(
+                            " -> updating schema @ {}",
+                            abs_path.parent().unwrap().display()
+                        );
                     }
+
                     updates.insert(
                         path.clone(),
                         (
@@ -147,11 +168,15 @@ impl Op for Add {
                 ChangeType::Removed {
                     processed: false, ..
                 } => {
-                    // Remove schema from the parent directory
-                    mount.unset_schema(parent_dir).await?;
+                    mount.unset_schema(abs_path.parent().unwrap()).await?;
+
                     if self.verbose {
-                        println!(" -> removing schema @ {}", parent_dir.display());
+                        println!(
+                            " -> removing schema @ {}",
+                            abs_path.parent().unwrap().display()
+                        );
                     }
+
                     updates.insert(
                         path.clone(),
                         (*hash, ChangeType::Removed { processed: true }),
@@ -219,40 +244,36 @@ impl Op for Add {
 
         // Third pass - handle objects
         for (path, abs_path, (hash, diff_type)) in object_change_log_iter {
-            // Get filename and verify format (.name.json)
-            let file_name = path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .and_then(|s| s.strip_suffix(".json"))
-                .and_then(|s| s.strip_prefix("."))
-                .ok_or_else(|| {
-                    AddError::Default(anyhow::anyhow!("Object files must be named .name.json"))
-                })?;
-
-            // For path/to/dir/.obj/.name.json, construct path/to/dir/name
-            let target_path = if let Some(obj_dir) = abs_path.parent() {
-                if let Some(parent_dir) = obj_dir.parent() {
-                    parent_dir.join(file_name)
-                } else {
-                    return Err(AddError::Default(anyhow::anyhow!("Invalid object path")));
-                }
-            } else {
-                return Err(AddError::Default(anyhow::anyhow!("Invalid object path")));
-            };
-
             match diff_type {
                 ChangeType::Added { modified: true, .. } => {
-                    let obj_str = std::fs::read_to_string(path.clone())?;
-                    let object: Object = serde_json::from_str(&obj_str)
-                        .map_err(|e| AddError::InvalidSchema(e.to_string()))?;
-                    let object_clone = object.clone();
-                    // write back out in case we upserted created_at and updated_at
-                    let obj_str = serde_json::to_string_pretty(&object_clone)?;
-                    std::fs::write(path.clone(), obj_str)?;
-                    mount.tag(&target_path, object_clone).await?;
+                    let contents = std::fs::read_to_string(path.clone())?;
+
+                    let json = contents
+                        .split("```json\n")
+                        .nth(1)
+                        .and_then(|s| s.split("\n```").next())
+                        .ok_or_else(|| {
+                            AddError::InvalidSchema("Invalid object file format".to_string())
+                        })?;
+
+                    let object: Object = serde_json::from_str(json)?;
+
+                    let target_path = PathBuf::from(
+                        abs_path
+                            .file_stem()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .strip_suffix(".obj")
+                            .unwrap(),
+                    );
+
+                    mount.tag(&target_path, object).await?;
+
                     if self.verbose {
                         println!(" -> adding tag @ {}", target_path.display());
                     }
+
                     updates.insert(
                         path.clone(),
                         (
@@ -267,14 +288,34 @@ impl Op for Add {
                 ChangeType::Modified {
                     processed: false, ..
                 } => {
-                    let obj_str = std::fs::read_to_string(path.clone())?;
-                    let object: Object = serde_json::from_str(&obj_str)
-                        .map_err(|e| AddError::InvalidSchema(e.to_string()))?;
-                    let object_clone = object.clone();
-                    mount.tag(&target_path, object_clone).await?;
+                    let contents = std::fs::read_to_string(path.clone())?;
+
+                    let json = contents
+                        .split("```json\n")
+                        .nth(1)
+                        .and_then(|s| s.split("\n```").next())
+                        .ok_or_else(|| {
+                            AddError::InvalidSchema("Invalid object file format".to_string())
+                        })?;
+
+                    let object: Object = serde_json::from_str(json)?;
+
+                    let target_path = PathBuf::from(
+                        abs_path
+                            .file_stem()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .strip_suffix(".obj")
+                            .unwrap(),
+                    );
+
+                    mount.tag(&target_path, object).await?;
+
                     if self.verbose {
                         println!(" -> updating tag @ {}", target_path.display());
                     }
+
                     updates.insert(
                         path.clone(),
                         (
@@ -289,10 +330,22 @@ impl Op for Add {
                 ChangeType::Removed {
                     processed: false, ..
                 } => {
+                    let target_path = PathBuf::from(
+                        abs_path
+                            .file_stem()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .strip_suffix(".obj")
+                            .unwrap(),
+                    );
+
                     mount.rm_tag(&target_path).await?;
+
                     if self.verbose {
                         println!(" -> removing tag @ {}", target_path.display());
                     }
+
                     updates.insert(
                         path.clone(),
                         (*hash, ChangeType::Removed { processed: true }),

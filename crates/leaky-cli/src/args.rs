@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use clap::Subcommand;
- 
+
 use super::ops::Add as AddOp;
 use super::ops::Init as InitOp;
 use super::ops::Pull as PullOp;

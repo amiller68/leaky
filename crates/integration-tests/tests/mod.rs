@@ -12,7 +12,7 @@ where
     let ctx = TestContext::new(test_name).await;
     test_fn(ctx.clone()).await;
     ctx.cleanup().await;
-} 
+}
 
 #[tokio::test]
 async fn test_basic_workflow() {

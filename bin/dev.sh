@@ -80,7 +80,7 @@ up-all)
 	;;
 down)
 	echo -e "${GREEN}Stopping services...${NC}"
-	# $DOCKER_COMPOSE_CMD down
+	$DOCKER_COMPOSE_CMD down
 	;;
 down-server)
 	stop_leaky_server

@@ -1,8 +1,6 @@
-use std::path::PathBuf;
-use rand;
 use assert_cmd::Command;
-use reqwest;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command as ProcessCommand;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -81,7 +79,10 @@ impl TestContext {
                 format!("{}://{}:{}", proxy_scheme, proxy_host, proxy_port),
             )
             .env("SQLITE_DATABASE_URL", server_db_url)
-            .env("LISTEN_ADDR", format!("0.0.0.0:{}", self.config.server_port))
+            .env(
+                "LISTEN_ADDR",
+                format!("0.0.0.0:{}", self.config.server_port),
+            )
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
@@ -103,11 +104,11 @@ impl TestContext {
         let output = ProcessCommand::new("docker")
             .args([
                 "run",
-                "--rm",  // Remove container when stopped
-                "-d",    // Run in background
-                "-v",    // Mount config file
+                "--rm", // Remove container when stopped
+                "-d",   // Run in background
+                "-v",   // Mount config file
                 &format!("{}:/etc/nginx/nginx.conf:ro", config_path.display()),
-                "-p",    // Map random port
+                "-p", // Map random port
                 &format!("{}:80", self.config.proxy_port),
                 "--network=host", // Use host network to connect to local services
                 "nginx:alpine",   // Use lightweight nginx image
@@ -134,18 +135,14 @@ impl TestContext {
         let client = reqwest::Client::new();
         let health_url = format!(
             "http://{}:{}/nginx-health",
-            self.config.proxy_host,
-            self.config.proxy_port
+            self.config.proxy_host, self.config.proxy_port
         );
 
         for _i in 0..5 {
-            match client.get(&health_url).send().await {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        return;
-                    }
+            if let Ok(resp) = client.get(&health_url).send().await {
+                if resp.status().is_success() {
+                    return;
                 }
-                _ => {}
             }
             sleep(Duration::from_secs(1)).await;
         }
@@ -156,19 +153,15 @@ impl TestContext {
         let client = reqwest::Client::new();
         let health_url = format!(
             "http://{}:{}/_status/healthz",
-            self.config.proxy_host,
-            self.config.server_port
+            self.config.proxy_host, self.config.server_port
         );
 
         for _i in 0..5 {
-            match client.get(&health_url).send().await {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        sleep(Duration::from_secs(1)).await;
-                        return;
-                    }
+            if let Ok(resp) = client.get(&health_url).send().await {
+                if resp.status().is_success() {
+                    sleep(Duration::from_secs(1)).await;
+                    return;
                 }
-                _ => {}
             }
             sleep(Duration::from_secs(3)).await;
         }
@@ -247,17 +240,17 @@ impl TestContext {
     pub async fn get_content(&self, path: &str) -> reqwest::Response {
         let client = reqwest::Client::new();
         client
-            .get(&format!(
+            .get(format!(
                 "{}://{}:{}/{}",
                 self.config.proxy_scheme, self.config.proxy_host, self.config.proxy_port, path
             ))
             .send()
             .await
-            .expect(&format!("Failed to get {}", path))
+            .unwrap_or_else(|_| panic!("Failed to get {}", path))
     }
 
     pub async fn assert_file_exists(&self, path: &str) {
-        assert!(fs::metadata(&self.config.data_dir.join(path)).is_ok());
+        assert!(fs::metadata(self.config.data_dir.join(path)).is_ok());
     }
 
     pub async fn data_clean(&self) {
@@ -291,7 +284,7 @@ impl Clone for TestContext {
             container_id: None,
         }
     }
-} 
+}
 
 #[derive(Clone)]
 pub struct TestConfig {
@@ -314,10 +307,10 @@ impl TestConfig {
         // Get random ports between 3001-4000
         let proxy_port = 3001 + rand::random::<u16>() % 1000;
         let server_port = 4001 + rand::random::<u16>() % 1000;
-        
+
         let scratch_dir = PathBuf::from("./tests/scratch").join(test_name);
         let fixtures_dir = PathBuf::from("./tests/fixtures");
-        
+
         Self {
             ipfs_scheme: "http".to_string(),
             ipfs_host: "localhost".to_string(),
@@ -373,10 +366,7 @@ http {{
     }}
 }}
             "#,
-            self.proxy_port,
-            self.server_port,
-            self.server_port,
-            self.server_port
+            self.proxy_port, self.server_port, self.server_port, self.server_port
         )
     }
-} 
+}

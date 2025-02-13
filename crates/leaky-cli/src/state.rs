@@ -61,13 +61,11 @@ impl AppState {
     }
 
     pub fn try_from(args: &Args) -> Result<Self, AppStateSetupError> {
-        let current_dir = std::env::current_dir()
-            .map_err(|e| AppStateSetupError::Io(e, PathBuf::from(".")))?;
+        let current_dir =
+            std::env::current_dir().map_err(|e| AppStateSetupError::Io(e, PathBuf::from(".")))?;
 
         let leaky_path = match Self::find_leaky_dir(&current_dir) {
-            Some(path) => {
-                path
-            }
+            Some(path) => path,
             None => match &args.command {
                 Command::Init(op) => {
                     let remote = op.remote.clone();
@@ -132,7 +130,7 @@ impl AppState {
         let previous_cid_path = path.join(PathBuf::from(DEFAULT_PREVIOUS_CID_NAME));
         let change_log_path = path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
         let key_path = key_path.join(PathBuf::from(DEFAULT_LEAKY_PRV_NAME));
-        
+
         // Summarize the state
         let on_disk_config = OnDiskConfig { remote, key_path };
         let on_disk_state = OnDiskState {

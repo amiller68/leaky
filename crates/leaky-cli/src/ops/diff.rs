@@ -1,6 +1,6 @@
+use std::env;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::env;
 
 use leaky_common::prelude::*;
 
@@ -9,8 +9,8 @@ use crate::change_log::{ChangeLog, ChangeType};
 
 pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
     // Get current working directory for relative path handling
-    let current_dir = env::current_dir().map_err(|e| DiffError::Io(e))?;
-    
+    let current_dir = env::current_dir().map_err(DiffError::Io)?;
+
     let mut update = base.clone();
     let next = utils::fs_tree()?;
     let default_hash = Cid::default();
