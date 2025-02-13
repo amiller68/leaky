@@ -81,8 +81,8 @@ impl TryFrom<&Args> for AppState {
 pub enum AppStateSetupError {
     #[error("default: {0}")]
     Default(#[from] anyhow::Error),
-    #[error("io: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("io: {0:?} path: {1:?}")]
+    Io(std::io::Error, PathBuf),
     #[error("serde: {0}")]
     Serde(#[from] serde_json::Error),
     #[error("missing data path")]
@@ -96,8 +96,9 @@ pub enum AppStateSetupError {
 impl AppState {
     pub fn client(&self) -> Result<ApiClient, AppStateSetupError> {
         let remote = self.on_disk_config.remote.clone();
-        let key_path = self.on_disk_config.key_path.clone();
-        let key_bytes = std::fs::read(key_path)?;
+        let key_path = &self.on_disk_config.key_path;
+        let key_bytes =
+            std::fs::read(key_path).map_err(|e| AppStateSetupError::Io(e, key_path.clone()))?;
         let key = EcKey::import(&key_bytes)?;
         let mut client = ApiClient::new(remote.as_str())?;
         client.with_credentials(key);
@@ -126,7 +127,7 @@ impl AppState {
         key_path: PathBuf,
     ) -> Result<(), AppStateSetupError> {
         if !path.exists() {
-            std::fs::create_dir_all(path)?;
+            std::fs::create_dir_all(path).map_err(|e| AppStateSetupError::Io(e, path.clone()))?;
         }
 
         let config_path = path.join(PathBuf::from(DEFAULT_CONFIG_NAME));
@@ -146,10 +147,19 @@ impl AppState {
         };
 
         // Write everything to disk
-        std::fs::write(config_path, serde_json::to_string(&on_disk_config)?)?;
-        std::fs::write(change_log_path, serde_json::to_string(&ChangeLog::new())?)?;
-        std::fs::write(state_path, serde_json::to_string(&on_disk_state)?)?;
-        std::fs::write(previous_cid_path, serde_json::to_string(&previous_cid)?)?;
+        let config_json = serde_json::to_string(&on_disk_config)?;
+        let change_log_json = serde_json::to_string(&ChangeLog::new())?;
+        let state_json = serde_json::to_string(&on_disk_state)?;
+        let previous_cid_json = serde_json::to_string(&previous_cid)?;
+
+        std::fs::write(&config_path, config_json)
+            .map_err(|e| AppStateSetupError::Io(e, config_path))?;
+        std::fs::write(&change_log_path, change_log_json)
+            .map_err(|e| AppStateSetupError::Io(e, change_log_path))?;
+        std::fs::write(&state_path, state_json)
+            .map_err(|e| AppStateSetupError::Io(e, state_path))?;
+        std::fs::write(&previous_cid_path, previous_cid_json)
+            .map_err(|e| AppStateSetupError::Io(e, previous_cid_path))?;
 
         Ok(())
     }
@@ -166,13 +176,18 @@ impl AppState {
         let previous_cid_path = path.join(PathBuf::from(DEFAULT_PREVIOUS_CID_NAME));
         let change_log_path = path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
 
-        let config_str = std::fs::read_to_string(config_path)?;
+        let config_str = std::fs::read_to_string(&config_path)
+            .map_err(|e| AppStateSetupError::Io(e, config_path))?;
+        let state_str = std::fs::read_to_string(&state_path)
+            .map_err(|e| AppStateSetupError::Io(e, state_path))?;
+        let previous_cid_str = std::fs::read_to_string(&previous_cid_path)
+            .map_err(|e| AppStateSetupError::Io(e, previous_cid_path))?;
+        let change_log_str = std::fs::read_to_string(&change_log_path)
+            .map_err(|e| AppStateSetupError::Io(e, change_log_path))?;
+
         let config: OnDiskConfig = serde_json::from_str(&config_str)?;
-        let state_str = std::fs::read_to_string(state_path)?;
         let state: OnDiskState = serde_json::from_str(&state_str)?;
-        let previous_cid_str = std::fs::read_to_string(previous_cid_path)?;
         let previous_cid: PreviousCid = serde_json::from_str(&previous_cid_str)?;
-        let change_log_str = std::fs::read_to_string(change_log_path)?;
         let change_log: ChangeLog = serde_json::from_str(&change_log_str)?;
 
         Ok((config, state, change_log, previous_cid))
@@ -196,15 +211,22 @@ impl AppState {
         let manifest = mount.manifest();
 
         let on_disk_state = OnDiskState { cid, manifest };
+        let state_json = serde_json::to_string(&on_disk_state)?;
+        std::fs::write(&state_path, state_json)
+            .map_err(|e| AppStateSetupError::Io(e, state_path))?;
+
         if let Some(cid) = previous_cid {
             let previous_cid_path = path.join(PathBuf::from(DEFAULT_PREVIOUS_CID_NAME));
             let previous_cid = PreviousCid { cid };
-            std::fs::write(previous_cid_path, serde_json::to_string(&previous_cid)?)?;
+            let previous_cid_json = serde_json::to_string(&previous_cid)?;
+            std::fs::write(&previous_cid_path, previous_cid_json)
+                .map_err(|e| AppStateSetupError::Io(e, previous_cid_path))?;
         }
 
-        std::fs::write(state_path, serde_json::to_string(&on_disk_state)?)?;
         if let Some(change_log) = change_log {
-            std::fs::write(change_log_path, serde_json::to_string(&change_log)?)?;
+            let change_log_json = serde_json::to_string(change_log)?;
+            std::fs::write(&change_log_path, change_log_json)
+                .map_err(|e| AppStateSetupError::Io(e, change_log_path))?;
         }
 
         Ok(())

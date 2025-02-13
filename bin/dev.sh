@@ -11,6 +11,9 @@ print_usage() {
 	echo "  up        Start all services"
 	echo "  down      Stop all services"
 	echo "  restart   Restart all services"
+	echo "  reset     Reset all services and data"
+	echo "  reset-server Reset server and data"
+	echo "  reset-data Reset data"
 	echo "  logs      View logs of all services"
 	echo "  ps        List running services"
 	echo "  shell     Open a shell in a service container"
@@ -67,34 +70,51 @@ up)
 	mkdir -p ./data/test
 	echo -e "${GREEN}Starting services...${NC}"
 	$DOCKER_COMPOSE_CMD up -d --build --remove-orphans
+	;;
+up-server)
 	start_leaky_server
+	;;
+up-all)
+	./bin/dev.sh up
+	./bin/dev.sh up-server
 	;;
 down)
 	echo -e "${GREEN}Stopping services...${NC}"
 	# $DOCKER_COMPOSE_CMD down
+	;;
+down-server)
 	stop_leaky_server
 	;;
-restart)
-	echo -e "${GREEN}Restarting services...${NC}"
-	$DOCKER_COMPOSE_CMD down
-	stop_leaky_server
-	$DOCKER_COMPOSE_CMD up -d --build
-	start_leaky_server
+down-all)
+	./bin/dev.sh down
+	./bin/dev.sh down-server
 	;;
 reset)
 	./bin/dev.sh down
 	docker volume rm leaky_ipfs_data || true
-	rm -rf ./data/*db
-	rm -rf ./data/*db*
-	rm -rf ./data/test
-	mkdir -p ./data/pems
-	cp -r ./example ./data/test
 	./bin/dev.sh up
-	sleep 3
+	;;
+reset-fixtures)
+	rm -rf data/pems
+	rm -rf data/test
+	mkdir -p ./data/pems
+	cp -r ./crates/integration-tests/tests/fixtures ./data/test
 	cd ./data/test
 	cargo run --bin leaky-cli -- init --remote http://localhost:3001 --key-path ../pems &&
 		cargo run --bin leaky-cli -- add &&
 		cargo run --bin leaky-cli -- push
+	;;
+reset-server)
+	./bin/dev.sh down-server
+	rm -rf ./data/*db
+	rm -rf ./data/*db*
+	./bin/dev.sh up-server
+	;;
+reset-all)
+	./bin/dev.sh reset
+	./bin/dev.sh reset-server
+	sleep 3
+	./bin/dev.sh reset-fixtures
 	;;
 logs)
 	echo -e "${GREEN}Viewing logs...${NC}"

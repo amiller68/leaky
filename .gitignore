@@ -1,4 +1,5 @@
 /target
 **/.leaky
 test/*
+tests/scratch
 /logs
