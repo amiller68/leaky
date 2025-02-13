@@ -33,6 +33,9 @@ async fn test_basic_workflow() {
     .await;
 }
 
+// TODO: test that it pulls objects properly if
+//  not already on disk
+
 #[tokio::test]
 async fn test_cannot_add_before_init() {
     run_test("cannot_add_before_init", |ctx| async move {

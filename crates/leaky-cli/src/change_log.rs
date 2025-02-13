@@ -127,7 +127,6 @@ impl ChangeLog {
 
 impl FileType {
     pub fn from_path(path: &Path) -> Self {
-        // Check if path ends with schema.md
         if path.file_name().is_some_and(|f| f == "schema.md") {
             FileType::Schema
         } else if path

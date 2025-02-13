@@ -184,12 +184,13 @@ impl Op for Pull {
             let matching_item = pulled_items.iter().find(|(p, _)| p == path);
 
             if let Some((_, NodeLink::Data(_, Some(object)))) = matching_item {
-                // Get base path without extension
+                // Get base path and extension
                 let stem = path.file_stem().unwrap().to_str().unwrap();
+                let ext = path.extension().unwrap_or_default().to_str().unwrap();
                 let parent = path.parent().unwrap();
 
-                // Create object file path: <name>.obj.md
-                let obj_path = parent.join(format!("{}.obj.md", stem));
+                // Create object file path: <name>.<ext>.obj.md
+                let obj_path = parent.join(format!("{}.{}.obj.md", stem, ext));
 
                 // Serialize with surrounding ```json
                 let obj_str = format!("```json\n{}\n```", serde_json::to_string_pretty(&object)?);

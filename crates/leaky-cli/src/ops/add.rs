@@ -258,14 +258,26 @@ impl Op for Add {
 
                     let object: Object = serde_json::from_str(json)?;
 
-                    let target_path = PathBuf::from(
+                    println!("object: {:?}", object);
+
+                    println!("abs_path: {:?}", abs_path);
+
+                    println!("parent: {:?}", abs_path.parent().unwrap());
+                    println!("stem: {:?}", abs_path.file_stem().unwrap());
+                    println!("str: {:?}", abs_path.file_stem().unwrap().to_str().unwrap());
+                    println!("stripped: {:?}", abs_path.file_stem().unwrap().to_str().unwrap().strip_suffix(".obj").unwrap());
+
+                    let target_path = PathBuf::from("/").join(
                         abs_path
-                            .file_stem()
+                            .parent()
                             .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .strip_suffix(".obj")
-                            .unwrap(),
+                            .join(abs_path
+                                .file_stem()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .strip_suffix(".obj")
+                                .unwrap())
                     );
 
                     mount.tag(&target_path, object).await?;
@@ -300,14 +312,17 @@ impl Op for Add {
 
                     let object: Object = serde_json::from_str(json)?;
 
-                    let target_path = PathBuf::from(
+                    let target_path = PathBuf::from("/").join(
                         abs_path
-                            .file_stem()
+                            .parent()
                             .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .strip_suffix(".obj")
-                            .unwrap(),
+                            .join(abs_path
+                                .file_stem()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .strip_suffix(".obj")
+                                .unwrap())
                     );
 
                     mount.tag(&target_path, object).await?;
@@ -330,14 +345,17 @@ impl Op for Add {
                 ChangeType::Removed {
                     processed: false, ..
                 } => {
-                    let target_path = PathBuf::from(
+                    let target_path = PathBuf::from("/").join(
                         abs_path
-                            .file_stem()
+                            .parent()
                             .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .strip_suffix(".obj")
-                            .unwrap(),
+                            .join(abs_path
+                                .file_stem()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .strip_suffix(".obj")
+                                .unwrap())
                     );
 
                     mount.rm_tag(&target_path).await?;
