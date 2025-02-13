@@ -1,5 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use std::env;
 
 use leaky_common::prelude::*;
 
@@ -7,15 +8,29 @@ use super::utils;
 use crate::change_log::{ChangeLog, ChangeType};
 
 pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
+    // Get current working directory for relative path handling
+    let current_dir = env::current_dir().map_err(|e| DiffError::Io(e))?;
+    
     let mut update = base.clone();
     let next = utils::fs_tree()?;
     let default_hash = Cid::default();
     let ipfs = IpfsRpc::default();
 
+    // When comparing paths, make them relative to the current directory
+    // This ensures path comparisons work correctly regardless of where the command is run from
+    let make_relative = |path: &Path| -> PathBuf {
+        if path.is_absolute() {
+            path.strip_prefix(&current_dir)
+                .unwrap_or(path)
+                .to_path_buf()
+        } else {
+            path.to_path_buf()
+        }
+    };
+
     // Insert the root directory hash into the regular changes for comparison
-    // This should always just get matched out and removed
     base.insert(
-        PathBuf::from(""),
+        make_relative(&PathBuf::from("")),
         (default_hash, ChangeType::Base { last_check: None }),
     );
 
@@ -33,7 +48,7 @@ pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
             (Some((next_tree, next_path)), Some((base_path, (base_hash, base_type)))) => {
                 // For each object, assuming we stay aligned on a sorted list of paths:
                 // If the base comes before then this file was removed
-                if base_path < next_path {
+                if make_relative(&base_path) < make_relative(&next_path) {
                     if !base_path.is_dir() {
                         match base_type {
                             ChangeType::Added { .. } => {
@@ -54,7 +69,7 @@ pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
                 }
 
                 // If next comes before base then the file was added
-                if next_path < base_path {
+                if make_relative(&next_path) < make_relative(&base_path) {
                     if !next_path.is_dir() {
                         let hash = utils::hash_file(&next_path, &ipfs, None).await?;
                         update.insert(
@@ -73,7 +88,7 @@ pub async fn diff(base: &mut ChangeLog) -> Result<ChangeLog, DiffError> {
                 }
 
                 // If they are equal then we are good. Move on to the next objects
-                if next_path == base_path {
+                if make_relative(&next_path) == make_relative(&base_path) {
                     // These are either both files or both directories
                     // If they are both files then we need to compare hashes
                     if !next_tree.is_dir() {

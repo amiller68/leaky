@@ -1,8 +1,7 @@
 use std::error::Error;
 
 use clap::Subcommand;
-use std::path::PathBuf;
-
+ 
 use super::ops::Add as AddOp;
 use super::ops::Init as InitOp;
 use super::ops::Pull as PullOp;
@@ -68,9 +67,6 @@ macro_rules! command_enum {
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
-
-    #[clap(short = 'p', long = "leaky-path", default_value = ".leaky")]
-    pub leaky_path: PathBuf,
 }
 
 use crate::command_enum;

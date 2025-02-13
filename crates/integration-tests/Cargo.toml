@@ -10,4 +10,7 @@ reqwest = { version = "0.11", features = ["rustls-tls"], default-features = fals
 fs_extra = "1.3"
 predicates = "3.0"
 leaky-server = { path = "../leaky-server" }
-leaky-cli = { path = "../leaky-cli" } 
+leaky-cli = { path = "../leaky-cli" }
+
+[dependencies]
+rand = "0.8" 

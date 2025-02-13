@@ -1,8 +1,6 @@
 #![allow(dead_code)]
 #![allow(clippy::result_large_err)]
 
-use std::convert::TryFrom;
-
 mod args;
 mod change_log;
 mod error;
@@ -12,7 +10,7 @@ mod version;
 
 use args::{Args, Op, Parser};
 use change_log::ChangeLog;
-use state::AppState;
+use state::{AppState, AppStateSetupError};
 
 #[tokio::main]
 async fn main() {
@@ -20,6 +18,11 @@ async fn main() {
     let args = Args::parse();
     let state = match AppState::try_from(&args) {
         Ok(state) => state,
+        Err(AppStateSetupError::MissingDataPath) => {
+            eprintln!("Could not find .leaky directory in current or parent directories");
+            eprintln!("Are you inside a leaky-initialized directory?");
+            std::process::exit(1);
+        }
         Err(e) => {
             eprintln!("State error: {}", e);
             std::process::exit(1);

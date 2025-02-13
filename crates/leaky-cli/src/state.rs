@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -13,11 +12,14 @@ use crate::args::Command;
 use super::Args;
 use super::ChangeLog;
 
+pub const DEFAULT_LEAKY_DIR_NAME: &str = ".leaky";
 pub const DEFAULT_CONFIG_NAME: &str = "leaky.conf";
 // pub const DEFAULT_BLOCK_CACHE_NAME: &str = "leaky.cache";
 pub const DEFAULT_STATE_NAME: &str = "leaky.state";
 pub const DEFAULT_PREVIOUS_CID_NAME: &str = "leaky.previous_cid";
 pub const DEFAULT_CHAGE_LOG_NAME: &str = "leaky.log";
+pub const DEFAULT_LEAKY_PEM_NAME: &str = "leaky.pem";
+pub const DEFAULT_LEAKY_PRV_NAME: &str = "leaky.prv";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OnDiskConfig {
@@ -44,56 +46,51 @@ pub struct AppState {
     pub change_log: ChangeLog,
 }
 
-impl TryFrom<&Args> for AppState {
-    type Error = AppStateSetupError;
-
-    fn try_from(args: &Args) -> Result<Self, Self::Error> {
-        let path = args.leaky_path.clone();
-        let load_result = AppState::load_on_disk_config(&path);
-        let load = match load_result {
-            Ok((config, state, change_log, previous_cid)) => {
-                Ok((config, state, change_log, previous_cid))
+impl AppState {
+    fn find_leaky_dir(start_path: &Path) -> Option<PathBuf> {
+        let mut current = start_path.to_owned();
+        loop {
+            let leaky_path = current.join(".leaky");
+            if leaky_path.is_dir() {
+                return Some(leaky_path);
             }
-            Err(AppStateSetupError::MissingDataPath) => match &args.command {
+            if !current.pop() {
+                return None;
+            }
+        }
+    }
+
+    pub fn try_from(args: &Args) -> Result<Self, AppStateSetupError> {
+        let current_dir = std::env::current_dir()
+            .map_err(|e| AppStateSetupError::Io(e, PathBuf::from(".")))?;
+
+        let leaky_path = match Self::find_leaky_dir(&current_dir) {
+            Some(path) => {
+                path
+            }
+            None => match &args.command {
                 Command::Init(op) => {
                     let remote = op.remote.clone();
                     let key_path = op.key_path.clone();
-
-                    AppState::init_on_disk_config(&path, remote, key_path)?;
-                    AppState::load_on_disk_config(&path)
+                    let leaky_path = current_dir.join(PathBuf::from(DEFAULT_LEAKY_DIR_NAME));
+                    AppState::init_on_disk_config(&leaky_path, remote, key_path)?;
+                    leaky_path
                 }
-                _ => Err(AppStateSetupError::MissingDataPath),
+                _ => return Err(AppStateSetupError::MissingDataPath),
             },
-            Err(e) => Err(e),
-        }?;
+        };
+
+        let load = AppState::load_on_disk_config(&leaky_path)?;
         let (on_disk_config, on_disk_state, change_log, previous_cid) = load;
         Ok(Self {
-            path,
+            path: leaky_path,
             on_disk_config,
             on_disk_state,
             change_log,
             previous_cid,
         })
     }
-}
 
-#[derive(Debug, thiserror::Error)]
-pub enum AppStateSetupError {
-    #[error("default: {0}")]
-    Default(#[from] anyhow::Error),
-    #[error("io: {0:?} path: {1:?}")]
-    Io(std::io::Error, PathBuf),
-    #[error("serde: {0}")]
-    Serde(#[from] serde_json::Error),
-    #[error("missing data path")]
-    MissingDataPath,
-    #[error("api error: {0}")]
-    ApiError(#[from] leaky_common::error::ApiError),
-    #[error("thumbs up error: {0}")]
-    ThumbsUp(#[from] thumbs_up::prelude::KeyError),
-}
-
-impl AppState {
     pub fn client(&self) -> Result<ApiClient, AppStateSetupError> {
         let remote = self.on_disk_config.remote.clone();
         let key_path = &self.on_disk_config.key_path;
@@ -134,8 +131,8 @@ impl AppState {
         let state_path = path.join(PathBuf::from(DEFAULT_STATE_NAME));
         let previous_cid_path = path.join(PathBuf::from(DEFAULT_PREVIOUS_CID_NAME));
         let change_log_path = path.join(PathBuf::from(DEFAULT_CHAGE_LOG_NAME));
-        let key_path = key_path.join("leaky.prv");
-
+        let key_path = key_path.join(PathBuf::from(DEFAULT_LEAKY_PRV_NAME));
+        
         // Summarize the state
         let on_disk_config = OnDiskConfig { remote, key_path };
         let on_disk_state = OnDiskState {
@@ -231,4 +228,20 @@ impl AppState {
 
         Ok(())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AppStateSetupError {
+    #[error("default: {0}")]
+    Default(#[from] anyhow::Error),
+    #[error("io: {0:?} path: {1:?}")]
+    Io(std::io::Error, PathBuf),
+    #[error("invalid config: {0}")]
+    Serde(#[from] serde_json::Error),
+    #[error("missing data path")]
+    MissingDataPath,
+    #[error("api error: {0}")]
+    ApiError(#[from] leaky_common::error::ApiError),
+    #[error("thumbs up error: {0}")]
+    ThumbsUp(#[from] thumbs_up::prelude::KeyError),
 }
