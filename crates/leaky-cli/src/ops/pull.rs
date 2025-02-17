@@ -103,8 +103,7 @@ impl Op for Pull {
             match (pi_next, ci_next.clone()) {
                 (Some((pi_path, pi_link)), Some((ci_tree, ci_path))) => {
                     // Skip schema files
-                    if ci_tree.is_dir()
-                        || ci_path.to_str().is_some_and(|p| p.ends_with(".schema"))
+                    if ci_tree.is_dir() || ci_path.to_str().is_some_and(|p| p.ends_with(".schema"))
                     {
                         ci_next = ci_iter.next();
                         continue;
@@ -186,7 +185,7 @@ impl Op for Pull {
 
                 // Convert to EditableObject for human-friendly serialization
                 let editable: EditableObject = object.clone().into();
-                
+
                 // Serialize with surrounding ```json
                 let obj_str = format!("```json\n{}\n```", serde_json::to_string_pretty(&editable)?);
                 std::fs::write(&obj_path, obj_str)?;

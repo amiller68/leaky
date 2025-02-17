@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
-use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use leaky_common::prelude::*;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use time::OffsetDateTime;
 
 /// A human-friendly version of Object for editing in markdown files
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,4 +29,4 @@ impl From<EditableObject> for Object {
         object.set_created_at(obj.created_at);
         object
     }
-} 
+}

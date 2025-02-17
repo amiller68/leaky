@@ -19,6 +19,7 @@ const MAX_HEIGHT: u32 = 300;
 pub struct GetContentQuery {
     pub html: Option<bool>,
     pub thumbnail: Option<bool>,
+    pub deep: Option<bool>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -49,7 +50,20 @@ pub async fn handler(
     let path = PathBuf::from("/").join(path);
     tracing::debug!("Absolute path: {:?}", path);
 
-    let ls_result = mount.ls(&path).await;
+    let ls_result = if query.deep.unwrap_or(false) {
+        // For deep listing
+        match mount.ls_deep(&path).await {
+            Ok((links, _schemas)) => {
+                // Convert to same format as regular ls
+                Ok((links, None))
+            }
+            Err(e) => Err(e),
+        }
+    } else {
+        // For regular listing
+        mount.ls(&path).await
+    };
+
     tracing::debug!("ls result for {:?}: {:?}", path, ls_result);
 
     match ls_result {

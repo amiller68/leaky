@@ -96,7 +96,8 @@ impl Op for Add {
         });
 
         // Track which files have been removed so we can handle object file cleanup gracefully
-        let mut removed_files: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+        let mut removed_files: std::collections::HashSet<PathBuf> =
+            std::collections::HashSet::new();
 
         // First pass - handle schemas
         for (path, abs_path, (hash, diff_type)) in schema_change_log_iter {
@@ -147,9 +148,7 @@ impl Op for Add {
                         })?;
 
                     let schema: Schema = serde_json::from_str(json)?;
-                    mount
-                        .set_schema(abs_path.parent().unwrap(), schema)
-                        .await?;
+                    mount.set_schema(abs_path.parent().unwrap(), schema).await?;
 
                     if self.verbose {
                         println!(
@@ -277,16 +276,15 @@ impl Op for Add {
                     let object: Object = editable.into();
 
                     let target_path = PathBuf::from("/").join(
-                        abs_path
-                            .parent()
-                            .unwrap()
-                            .join(abs_path
+                        abs_path.parent().unwrap().join(
+                            abs_path
                                 .file_stem()
                                 .unwrap()
                                 .to_str()
                                 .unwrap()
                                 .strip_suffix(".obj")
-                                .unwrap())
+                                .unwrap(),
+                        ),
                     );
 
                     mount.tag(&target_path, object).await?;
@@ -323,22 +321,26 @@ impl Op for Add {
                     let object: Object = editable.into();
 
                     let target_path = PathBuf::from("/").join(
-                        abs_path
-                            .parent()
-                            .unwrap()
-                            .join(abs_path
+                        abs_path.parent().unwrap().join(
+                            abs_path
                                 .file_stem()
                                 .unwrap()
                                 .to_str()
                                 .unwrap()
                                 .strip_suffix(".obj")
-                                .unwrap())
+                                .unwrap(),
+                        ),
                     );
-                   
+
                     let created_at = object.created_at();
                     let updated_at = object.updated_at();
                     if self.verbose {
-                        println!(" -> updating tag @ {} (created: {}, updated: {})", target_path.display(), created_at, updated_at);
+                        println!(
+                            " -> updating tag @ {} (created: {}, updated: {})",
+                            target_path.display(),
+                            created_at,
+                            updated_at
+                        );
                     }
 
                     mount.tag(&target_path, object).await?;
@@ -358,23 +360,25 @@ impl Op for Add {
                     processed: false, ..
                 } => {
                     let target_path = PathBuf::from("/").join(
-                        abs_path
-                            .parent()
-                            .unwrap()
-                            .join(abs_path
+                        abs_path.parent().unwrap().join(
+                            abs_path
                                 .file_stem()
                                 .unwrap()
                                 .to_str()
                                 .unwrap()
                                 .strip_suffix(".obj")
-                                .unwrap())
+                                .unwrap(),
+                        ),
                     );
 
                     // If the target file was already removed, we can skip removing the tag
                     // since it would have been removed along with the file
                     if removed_files.contains(&target_path) {
                         if self.verbose {
-                            println!(" -> skipping tag removal for {} (target file already removed)", target_path.display());
+                            println!(
+                                " -> skipping tag removal for {} (target file already removed)",
+                                target_path.display()
+                            );
                         }
                     } else {
                         mount.rm_tag(&target_path).await?;
