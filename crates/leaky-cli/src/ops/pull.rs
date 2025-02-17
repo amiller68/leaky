@@ -9,6 +9,7 @@ use leaky_common::prelude::*;
 
 use crate::change_log::ChangeLog;
 use crate::change_log::ChangeType;
+use crate::ops::EditableObject;
 use crate::{AppState, Op};
 
 use super::utils;
@@ -94,7 +95,6 @@ impl Op for Pull {
         ci_iter.next();
 
         let mut to_pull = Vec::new();
-        let mut to_prune = Vec::new();
 
         let mut pi_next = pi_iter.next();
         let mut ci_next = ci_iter.next();
@@ -102,9 +102,8 @@ impl Op for Pull {
         loop {
             match (pi_next, ci_next.clone()) {
                 (Some((pi_path, pi_link)), Some((ci_tree, ci_path))) => {
-                    // Skip .obj directories and schema files
+                    // Skip schema files
                     if ci_tree.is_dir()
-                        || ci_path.to_str().is_some_and(|p| p.contains("/.obj/"))
                         || ci_path.to_str().is_some_and(|p| p.ends_with(".schema"))
                     {
                         ci_next = ci_iter.next();
@@ -130,7 +129,6 @@ impl Op for Pull {
                         to_pull.push((pi_path, pi_link.cid()));
                         pi_next = pi_iter.next();
                     } else if pi_path > &normalized_ci_path {
-                        to_prune.push(normalized_ci_path);
                         ci_next = ci_iter.next();
                     } else if file_needs_pull(&local_ipfs_rpc, &normalized_ci_path, pi_link.cid())
                         .await?
@@ -153,20 +151,14 @@ impl Op for Pull {
                     to_pull.push((&pi.0, pi.1.cid()));
                     pi_next = pi_iter.next();
                 }
-                (None, Some((_, ci_path))) => {
-                    // Don't prune .obj directories or schema files
-                    if !ci_path.to_str().is_some_and(|p| p.contains("/.obj/"))
-                        && !ci_path.to_str().is_some_and(|p| p.ends_with(".schema"))
-                    {
-                        to_prune.push(ci_path);
-                    }
+                (None, Some(_)) => {
                     ci_next = ci_iter.next();
                 }
                 (None, None) => break,
             }
         }
 
-        // Handle regular files and their objects
+        // Handle regular files
         for (path, link) in to_pull {
             pull_file(&mount, path).await?;
             // now that it's on disk, set the last_check to Some(SystemTime::now())
@@ -179,11 +171,11 @@ impl Op for Pull {
                     },
                 ),
             );
+        }
 
-            // Write object file if it exists
-            let matching_item = pulled_items.iter().find(|(p, _)| p == path);
-
-            if let Some((_, NodeLink::Data(_, Some(object)))) = matching_item {
+        // Handle all object files
+        for (path, link) in pulled_items.iter() {
+            if let NodeLink::Data(_, Some(object)) = link {
                 // Get base path and extension
                 let stem = path.file_stem().unwrap().to_str().unwrap();
                 let ext = path.extension().unwrap_or_default().to_str().unwrap();
@@ -192,8 +184,11 @@ impl Op for Pull {
                 // Create object file path: <name>.<ext>.obj.md
                 let obj_path = parent.join(format!("{}.{}.obj.md", stem, ext));
 
+                // Convert to EditableObject for human-friendly serialization
+                let editable: EditableObject = object.clone().into();
+                
                 // Serialize with surrounding ```json
-                let obj_str = format!("```json\n{}\n```", serde_json::to_string_pretty(&object)?);
+                let obj_str = format!("```json\n{}\n```", serde_json::to_string_pretty(&editable)?);
                 std::fs::write(&obj_path, obj_str)?;
 
                 // Write to change log
@@ -208,10 +203,6 @@ impl Op for Pull {
                     ),
                 );
             }
-        }
-
-        for path in to_prune {
-            rm_file(&path)?;
         }
 
         // Handle schemas last, after all files are processed

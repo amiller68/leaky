@@ -213,24 +213,13 @@ impl Node {
         let maybe_schema = self.schema();
 
         // get the link
-        let mut object = object.clone();
+        let object = object.clone();
 
-        if let Some(NodeLink::Data(cid, maybe_object)) = self.links.get(name) {
-            // if there's an object here already, we'll inhereit creation date
-            if let Some(obj) = maybe_object {
-                object.set_created_at(*obj.created_at());
-            }
+        if let Some(NodeLink::Data(cid, _maybe_object)) = self.links.get(name) {
             // validate the object against the schema
-            match maybe_schema {
-                Some(schema) => {
-                    schema.validate(&object)?;
-                }
-                None => {
-                    if let Some(schema) = self.schema() {
-                        schema.validate(&object)?;
-                    }
-                }
-            };
+            if let Some(schema) = maybe_schema {
+                schema.validate(&object)?;
+            }
             // and we'll overwrite the object in the link
             self.links
                 .insert(name.to_string(), NodeLink::Data(*cid, Some(object)));

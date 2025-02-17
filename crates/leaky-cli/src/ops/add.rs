@@ -9,6 +9,7 @@ use async_trait::async_trait;
 use leaky_common::prelude::*;
 
 use crate::change_log::ChangeType;
+use crate::ops::EditableObject;
 use crate::{AppState, Op};
 
 use super::diff::{diff, DiffError};
@@ -93,6 +94,9 @@ impl Op for Add {
             let abs_path = abs_path(path).unwrap();
             (path.clone(), abs_path, (hash, change))
         });
+
+        // Track which files have been removed so we can handle object file cleanup gracefully
+        let mut removed_files: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
         // First pass - handle schemas
         for (path, abs_path, (hash, diff_type)) in schema_change_log_iter {
@@ -236,6 +240,19 @@ impl Op for Add {
                     if self.verbose {
                         println!(" -> removing file @ {}", abs_path.display());
                     }
+
+                    // Track that we removed this file
+                    removed_files.insert(abs_path.clone());
+
+                    // Remove the .obj file from the filesystem if it exists
+                    let obj_path = path.with_extension("obj.md");
+                    if obj_path.exists() {
+                        std::fs::remove_file(&obj_path)?;
+                        if self.verbose {
+                            println!(" -> removing object file @ {}", obj_path.display());
+                        }
+                    }
+
                     updates.insert(path_clone, (*hash, ChangeType::Removed { processed: true }));
                 }
                 _ => {}
@@ -256,16 +273,8 @@ impl Op for Add {
                             AddError::InvalidSchema("Invalid object file format".to_string())
                         })?;
 
-                    let object: Object = serde_json::from_str(json)?;
-
-                    println!("object: {:?}", object);
-
-                    println!("abs_path: {:?}", abs_path);
-
-                    println!("parent: {:?}", abs_path.parent().unwrap());
-                    println!("stem: {:?}", abs_path.file_stem().unwrap());
-                    println!("str: {:?}", abs_path.file_stem().unwrap().to_str().unwrap());
-                    println!("stripped: {:?}", abs_path.file_stem().unwrap().to_str().unwrap().strip_suffix(".obj").unwrap());
+                    let editable: EditableObject = serde_json::from_str(json)?;
+                    let object: Object = editable.into();
 
                     let target_path = PathBuf::from("/").join(
                         abs_path
@@ -310,7 +319,8 @@ impl Op for Add {
                             AddError::InvalidSchema("Invalid object file format".to_string())
                         })?;
 
-                    let object: Object = serde_json::from_str(json)?;
+                    let editable: EditableObject = serde_json::from_str(json)?;
+                    let object: Object = editable.into();
 
                     let target_path = PathBuf::from("/").join(
                         abs_path
@@ -324,12 +334,14 @@ impl Op for Add {
                                 .strip_suffix(".obj")
                                 .unwrap())
                     );
+                   
+                    let created_at = object.created_at();
+                    let updated_at = object.updated_at();
+                    if self.verbose {
+                        println!(" -> updating tag @ {} (created: {}, updated: {})", target_path.display(), created_at, updated_at);
+                    }
 
                     mount.tag(&target_path, object).await?;
-
-                    if self.verbose {
-                        println!(" -> updating tag @ {}", target_path.display());
-                    }
 
                     updates.insert(
                         path.clone(),
@@ -358,10 +370,17 @@ impl Op for Add {
                                 .unwrap())
                     );
 
-                    mount.rm_tag(&target_path).await?;
-
-                    if self.verbose {
-                        println!(" -> removing tag @ {}", target_path.display());
+                    // If the target file was already removed, we can skip removing the tag
+                    // since it would have been removed along with the file
+                    if removed_files.contains(&target_path) {
+                        if self.verbose {
+                            println!(" -> skipping tag removal for {} (target file already removed)", target_path.display());
+                        }
+                    } else {
+                        mount.rm_tag(&target_path).await?;
+                        if self.verbose {
+                            println!(" -> removing tag @ {}", target_path.display());
+                        }
                     }
 
                     updates.insert(
